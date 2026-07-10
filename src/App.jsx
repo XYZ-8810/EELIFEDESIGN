@@ -1,4 +1,5 @@
-import React, { useState, useMemo, createContext, useContext } from 'react';
+import React, { useState, useMemo, useEffect, createContext, useContext } from 'react';
+import { supabase } from './supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import {
   LayoutDashboard, ClipboardList, FileStack, Users, Package, Receipt,
@@ -388,8 +389,14 @@ function LangToggle({ dark }) {
 /* ============================== 团队 Context ============================== */
 const TeamsContext = createContext({ teams: {}, setTeams: () => {} });
 function useTeamsCtx() { return useContext(TeamsContext); }
-function TeamsProvider({ children }) {
-  const [teams, setTeams] = useState(INIT_TEAMS);
+function TeamsProvider({ initialTeams, children }) {
+  const [teams, setTeams] = useState(initialTeams || {});
+  const [ready, setReady] = useState(false);
+  useEffect(() => { setReady(true); }, []);
+  useEffect(() => {
+    if (!ready) return;
+    upsertTeams(teamsMapToRows(teams));
+  }, [teams]);
   return <TeamsContext.Provider value={{ teams, setTeams }}>{children}</TeamsContext.Provider>;
 }
 
@@ -448,6 +455,100 @@ const PAYMENT_METHODS = [
   { code: 'card', key: 'payMethodCard' },
   { code: 'installment', key: 'payMethodInstallment' },
 ];
+
+/* ============================== Supabase 资料转换 ============================== */
+// DB 用 snake_case，app 里面用 camelCase，这里做两边的转换
+
+function teamsRowsToMap(rows) {
+  const map = {};
+  rows.forEach(r => { map[r.id] = { id: r.id, name: r.name, leader: r.leader, members: [] }; });
+  return map;
+}
+function teamsMapToRows(map) {
+  return Object.values(map).map(t => ({ id: t.id, name: t.name, leader: t.leader || null }));
+}
+
+function accountRowToApp(r) {
+  return { id: r.id, role: r.role, name: r.name, team: r.team, password: r.password };
+}
+function accountAppToRow(a) {
+  return { id: a.id, role: a.role, name: a.name || null, team: a.team || null, password: a.password };
+}
+
+function itemRowToApp(r) {
+  return { id: r.id, code: r.code, name: r.name, price: Number(r.price), stock: r.stock, color: r.color, category: r.category, image: r.image, addOns: r.add_ons || [] };
+}
+function itemAppToRow(it) {
+  return { id: it.id, code: it.code, name: it.name, price: it.price, stock: it.stock, color: it.color, category: it.category, image: it.image || null, add_ons: it.addOns || [] };
+}
+
+function orderRowToApp(r) {
+  return {
+    id: r.id, customer: r.customer, alamat: r.alamat, poscode: r.poscode, phone1: r.phone1, phone2: r.phone2,
+    agent: r.agent, team: r.team, salesExecutive: r.sales_executive, salesmanPhone: r.salesman_phone,
+    items: r.items || [], amount: Number(r.amount), total: Number(r.total), status: r.status,
+    soNumber: r.so_number, soFileUrl: r.so_file_url, soFileName: r.so_file_name, rejectReason: r.reject_reason,
+    previousSoNumber: r.previous_so_number, deliveryUrgent: r.delivery_urgent, logisticFile: r.logistic_file,
+    logisticFileUrl: r.logistic_file_url, logisticFileType: r.logistic_file_type, logisticStatus: r.logistic_status,
+    depositAmount: r.deposit_amount != null ? Number(r.deposit_amount) : null, depositSlip: r.deposit_slip,
+    depositSlipUrl: r.deposit_slip_url, depositSlipType: r.deposit_slip_type, remark: r.remark, date: r.order_date,
+  };
+}
+function orderAppToRow(o) {
+  return {
+    id: o.id, customer: o.customer, alamat: o.alamat || null, poscode: o.poscode || null, phone1: o.phone1 || null, phone2: o.phone2 || null,
+    agent: o.agent, team: o.team, sales_executive: o.salesExecutive || null, salesman_phone: o.salesmanPhone || null,
+    items: o.items || [], amount: o.amount, total: o.total, status: o.status,
+    so_number: o.soNumber || null, so_file_url: o.soFileUrl || null, so_file_name: o.soFileName || null, reject_reason: o.rejectReason || null,
+    previous_so_number: o.previousSoNumber || null, delivery_urgent: !!o.deliveryUrgent, logistic_file: o.logisticFile || null,
+    logistic_file_url: o.logisticFileUrl || null, logistic_file_type: o.logisticFileType || null, logistic_status: o.logisticStatus || null,
+    deposit_amount: o.depositAmount != null ? o.depositAmount : null, deposit_slip: o.depositSlip || null,
+    deposit_slip_url: o.depositSlipUrl || null, deposit_slip_type: o.depositSlipType || null, remark: o.remark || null, order_date: o.date || null,
+  };
+}
+
+function claimRowToApp(r) {
+  return {
+    id: r.id, orderId: r.order_id, agent: r.agent, team: r.team, method: r.method, slipFile: r.slip_file,
+    slipUrl: r.slip_url, slipType: r.slip_type, slipAmount: r.slip_amount != null ? Number(r.slip_amount) : null,
+    itemAmount: r.item_amount != null ? Number(r.item_amount) : null, claimAmount: r.claim_amount != null ? Number(r.claim_amount) : null,
+    transferVerified: r.transfer_verified, status: r.status, driveFileName: r.drive_file_name, driveFolder: r.drive_folder,
+    driveFolderUrl: r.drive_folder_url, date: r.claim_date,
+  };
+}
+function claimAppToRow(c) {
+  return {
+    id: c.id, order_id: c.orderId, agent: c.agent, team: c.team, method: c.method, slip_file: c.slipFile || null,
+    slip_url: c.slipUrl || null, slip_type: c.slipType || null, slip_amount: c.slipAmount, item_amount: c.itemAmount, claim_amount: c.claimAmount,
+    transfer_verified: !!c.transferVerified, status: c.status, drive_file_name: c.driveFileName || null, drive_folder: c.driveFolder || null,
+    drive_folder_url: c.driveFolderUrl || null, claim_date: c.date || null,
+  };
+}
+
+// 小型表格的「全部删除再整批写入」同步方式：用在支援删除功能的表格（accounts、items）
+async function replaceTable(table, rows) {
+  try {
+    await supabase.from(table).delete().not('id', 'is', null);
+    if (rows.length > 0) {
+      const { error } = await supabase.from(table).insert(rows);
+      if (error) console.error(`sync ${table} failed:`, error.message);
+    }
+  } catch (e) {
+    console.error(`sync ${table} error:`, e);
+  }
+}
+// upsert：用在 app 里不会被删除、但会被别的表格用外键参照的表格（teams、orders、claims）
+async function upsertRows(table, rows) {
+  try {
+    if (rows.length > 0) {
+      const { error } = await supabase.from(table).upsert(rows);
+      if (error) console.error(`sync ${table} failed:`, error.message);
+    }
+  } catch (e) {
+    console.error(`sync ${table} error:`, e);
+  }
+}
+async function upsertTeams(rows) { return upsertRows('teams', rows); }
 
 /* ============================== 小组件 ============================== */
 function StampBadge({ status }) {
@@ -2202,14 +2303,20 @@ function ItemEditor({ item, existingItems = [], onSave, onCancel }) {
 }
 
 /* ============================== Main App ============================== */
-function AppInner() {
+function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts }) {
   const { t } = useLang();
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home');
-  const [orders, setOrders] = useState(INIT_ORDERS);
-  const [claims, setClaims] = useState(INIT_CLAIMS);
-  const [items, setItems] = useState(INIT_ITEMS);
-  const [accounts, setAccounts] = useState(INIT_ACCOUNTS);
+  const [orders, setOrders] = useState(initialOrders || []);
+  const [claims, setClaims] = useState(initialClaims || []);
+  const [items, setItems] = useState(initialItems || []);
+  const [accounts, setAccounts] = useState(initialAccounts || []);
+  const [ready, setReady] = useState(false);
+  useEffect(() => { setReady(true); }, []);
+  useEffect(() => { if (ready) upsertRows('orders', orders.map(orderAppToRow)); }, [orders]);
+  useEffect(() => { if (ready) upsertRows('claims', claims.map(claimAppToRow)); }, [claims]);
+  useEffect(() => { if (ready) replaceTable('items', items.map(itemAppToRow)); }, [items]);
+  useEffect(() => { if (ready) replaceTable('accounts', accounts.map(accountAppToRow)); }, [accounts]);
 
   const navMap = {
     salesman: [{ id: 'home', label: t('nav_dashboard'), icon: LayoutDashboard }],
@@ -2240,11 +2347,94 @@ function AppInner() {
   );
 }
 
+function LoadingScreen() {
+  return (
+    <div style={{ minHeight: '100vh', background: C.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14 }}>
+      <div style={{ width: 34, height: 34, border: `3px solid #3C3D35`, borderTopColor: C.woodLight, borderRadius: '50%', animation: 'spin 0.9s linear infinite' }} />
+      <div style={{ color: '#B8B2A0', fontFamily: fontMono, fontSize: 12, letterSpacing: '0.08em' }}>LOADING…</div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 export default function FurnitureOpsPrototype() {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let [teamsRes, accountsRes, itemsRes, ordersRes, claimsRes] = await Promise.all([
+          supabase.from('teams').select('*'),
+          supabase.from('accounts').select('*'),
+          supabase.from('items').select('*'),
+          supabase.from('orders').select('*'),
+          supabase.from('claims').select('*'),
+        ]);
+
+        // 第一次跑、数据库还是空的话，把种子资料写进去
+        if (!teamsRes.error && teamsRes.data.length === 0) {
+          await supabase.from('teams').insert(teamsMapToRows(INIT_TEAMS));
+          teamsRes = await supabase.from('teams').select('*');
+        }
+        if (!accountsRes.error && accountsRes.data.length === 0) {
+          await supabase.from('accounts').insert(INIT_ACCOUNTS.map(accountAppToRow));
+          accountsRes = await supabase.from('accounts').select('*');
+        }
+        if (!itemsRes.error && itemsRes.data.length === 0) {
+          await supabase.from('items').insert(INIT_ITEMS.map(itemAppToRow));
+          itemsRes = await supabase.from('items').select('*');
+        }
+        if (!ordersRes.error && ordersRes.data.length === 0) {
+          await supabase.from('orders').insert(INIT_ORDERS.map(orderAppToRow));
+          ordersRes = await supabase.from('orders').select('*');
+        }
+        if (!claimsRes.error && claimsRes.data.length === 0) {
+          await supabase.from('claims').insert(INIT_CLAIMS.map(claimAppToRow));
+          claimsRes = await supabase.from('claims').select('*');
+        }
+
+        const firstError = [teamsRes, accountsRes, itemsRes, ordersRes, claimsRes].find(r => r.error);
+        if (firstError) throw firstError.error;
+
+        if (!cancelled) {
+          setData({
+            teams: teamsRowsToMap(teamsRes.data),
+            accounts: accountsRes.data.map(accountRowToApp),
+            items: itemsRes.data.map(itemRowToApp),
+            orders: ordersRes.data.map(orderRowToApp),
+            claims: claimsRes.data.map(claimRowToApp),
+          });
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('load from supabase failed:', e);
+        if (!cancelled) { setLoadError(e.message || String(e)); setLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return <LoadingScreen />;
+
+  if (loadError) {
+    return (
+      <div style={{ minHeight: '100vh', background: C.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ maxWidth: 420, color: '#F5F1E8', fontFamily: fontBody, textAlign: 'center' }}>
+          <div style={{ fontFamily: fontDisplay, fontSize: 20, marginBottom: 10 }}>无法连线到数据库</div>
+          <div style={{ color: '#B8B2A0', fontSize: 13, marginBottom: 6 }}>{loadError}</div>
+          <div style={{ color: '#8A8474', fontSize: 12 }}>请确认 Supabase 专案设定与网路连线，然后重新整理页面。</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <LangProvider>
-      <TeamsProvider>
-        <AppInner />
+      <TeamsProvider initialTeams={data.teams}>
+        <AppInner initialAccounts={data.accounts} initialItems={data.items} initialOrders={data.orders} initialClaims={data.claims} />
       </TeamsProvider>
     </LangProvider>
   );
