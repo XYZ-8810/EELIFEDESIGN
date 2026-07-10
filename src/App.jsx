@@ -284,7 +284,7 @@ const STRINGS = {
   passwordUpdated: { zh: '密码已更新', en: 'Password updated' },
   currentPasswordWrong: { zh: '目前密码不正确', en: 'Current password is incorrect' },
   passwordMismatch: { zh: '两次输入的新密码不一致', en: 'New passwords do not match' },
-  passwordTooShort: { zh: '新密码不能为空', en: 'New password cannot be empty' },
+  passwordTooShort: { zh: '密码至少要 6 个字符', en: 'Password must be at least 6 characters' },
   forgotPasswordNote: { zh: '忘记密码？请联系 Finance 重设。', en: 'Forgot your password? Ask Finance to reset it.' },
   contactSalesExec: { zh: '姓名', en: 'Name' },
   changeBtn: { zh: '更换', en: 'Change' },
@@ -413,10 +413,10 @@ function seedAccounts() {
   const list = [];
   let idc = 1;
   Object.values(INIT_TEAMS).forEach(t => {
-    list.push({ id: idc++, role: 'leader', team: t.id, password: '1234' });
-    t.members.forEach(m => list.push({ id: idc++, role: 'salesman', name: m, team: t.id, password: '1234' }));
+    list.push({ id: idc++, role: 'leader', team: t.id, password: '123456' });
+    t.members.forEach(m => list.push({ id: idc++, role: 'salesman', name: m, team: t.id, password: '123456' }));
   });
-  list.push({ id: idc++, role: 'admin', name: 'Admin User', password: '1234' });
+  list.push({ id: idc++, role: 'admin', name: 'Admin User', password: '123456' });
   return list;
 }
 const INIT_ACCOUNTS = seedAccounts();
@@ -816,7 +816,7 @@ function ChangePasswordPanel({ user, accounts, setAccounts, onClose }) {
   const [checking, setChecking] = useState(false);
 
   const submit = async () => {
-    if (!next.trim()) { setError(t('passwordTooShort')); return; }
+    if (!next.trim() || next.length < 6) { setError(t('passwordTooShort')); return; }
     if (next !== confirm) { setError(t('passwordMismatch')); return; }
     setChecking(true);
     // 用目前密码重新登入一次来确认「目前密码」真的是对的
@@ -1861,7 +1861,7 @@ function AccountsManager({ accounts, setAccounts }) {
   const startCreate = (role) => { setCreatingRole(role); setName(''); setTeam(''); setTeamNameInput(''); setPassword(''); setError(''); };
 
   const submitCreate = async () => {
-    if (!password.trim()) { setError(t('passwordTooShort')); return; }
+    if (!password.trim() || password.length < 6) { setError(t('passwordTooShort')); return; }
     let payload = null;
     if (creatingRole === 'salesman') {
       if (!name.trim()) { setError(t('accountName')); return; }
@@ -1896,11 +1896,12 @@ function AccountsManager({ accounts, setAccounts }) {
     setCreatingRole(null);
   };
 
+  const [resetError, setResetError] = useState('');
   const confirmReset = async (id) => {
-    if (!resetValue.trim()) return;
+    if (!resetValue.trim() || resetValue.length < 6) { setResetError(t('passwordTooShort')); return; }
     const { data, error: fnError } = await supabase.functions.invoke('accounts-admin', { body: { action: 'resetPassword', userId: id, newPassword: resetValue } });
-    if (fnError || data?.error) { console.error(fnError || data.error); return; }
-    setResettingId(null); setResetValue('');
+    if (fnError || data?.error) { setResetError((data && data.error) || fnError.message); return; }
+    setResetError(''); setResettingId(null); setResetValue('');
   };
   const deleteAccount = async (id) => {
     setAccounts(prev => prev.filter(a => a.id !== id));
@@ -1984,10 +1985,13 @@ function AccountsManager({ accounts, setAccounts }) {
                 <td style={td}>{nameTeamLabel(a)}</td>
                 <td style={{ ...td, fontFamily: fontMono }}>
                   {resettingId === a.id ? (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input autoFocus style={{ ...inputStyle, width: 110, padding: '6px 8px' }} value={resetValue} onChange={e => setResetValue(e.target.value)} />
-                      <Btn size="sm" icon={CheckCircle2} onClick={() => confirmReset(a.id)}>{t('save')}</Btn>
-                      <Btn size="sm" variant="ghost" onClick={() => setResettingId(null)}>{t('cancel')}</Btn>
+                    <div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input autoFocus style={{ ...inputStyle, width: 110, padding: '6px 8px' }} value={resetValue} onChange={e => { setResetValue(e.target.value); setResetError(''); }} />
+                        <Btn size="sm" icon={CheckCircle2} onClick={() => confirmReset(a.id)}>{t('save')}</Btn>
+                        <Btn size="sm" variant="ghost" onClick={() => { setResettingId(null); setResetError(''); }}>{t('cancel')}</Btn>
+                      </div>
+                      {resetError && <div style={{ color: C.brick, fontSize: 11, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={11} /> {resetError}</div>}
                     </div>
                   ) : '••••••'}
                 </td>
@@ -2403,7 +2407,7 @@ export default function FurnitureOpsPrototype() {
             await supabase.functions.invoke('accounts-admin', { body: { action: 'create', role: a.role, name: a.name, team: a.team, password: a.password } });
           }
           // Finance 的登入账号（种子资料本身没有，额外建一个）
-          await supabase.functions.invoke('accounts-admin', { body: { action: 'create', role: 'finance', name: 'Finance User', password: '1234' } });
+          await supabase.functions.invoke('accounts-admin', { body: { action: 'create', role: 'finance', name: 'Finance User', password: '123456' } });
           accountsRes = await supabase.from('profiles').select('*');
         }
         if (!itemsRes.error && itemsRes.data.length === 0) {
