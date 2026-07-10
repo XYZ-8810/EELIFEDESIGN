@@ -469,10 +469,7 @@ function teamsMapToRows(map) {
 }
 
 function accountRowToApp(r) {
-  return { id: r.id, role: r.role, name: r.name, team: r.team, password: r.password };
-}
-function accountAppToRow(a) {
-  return { id: a.id, role: a.role, name: a.name || null, team: a.team || null, password: a.password };
+  return { id: r.id, role: r.role, name: r.name, team: r.team, email: r.email };
 }
 
 function itemRowToApp(r) {
@@ -644,18 +641,22 @@ function Field({ label, children }) {
 const inputStyle = { width: '100%', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: 6, padding: '9px 11px', fontFamily: fontBody, fontSize: 13.5, background: C.surface, color: C.ink };
 
 /* ============================== 登录 / 角色选择 ============================== */
-const DEMO_PASSWORD = '1234';
 
-function AuthStep({ pendingUser, expectedPassword, onBack, onSuccess }) {
+function AuthStep({ pendingUser, onBack, onSuccess }) {
   const { t } = useLang();
   const [mode, setMode] = useState('password'); // 'password' | 'faceid'
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [checking, setChecking] = useState(false);
 
-  const submitPassword = () => {
-    if (password === expectedPassword) { setError(''); onSuccess(); }
+  const submitPassword = async () => {
+    if (!pendingUser.email) { setError(t('wrongPassword')); return; }
+    setChecking(true);
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: pendingUser.email, password });
+    setChecking(false);
+    if (!authError) { setError(''); onSuccess(); }
     else setError(t('wrongPassword'));
   };
 
@@ -696,8 +697,8 @@ function AuthStep({ pendingUser, expectedPassword, onBack, onSuccess }) {
               </button>
             </div>
             {error && <div style={{ color: C.brick, fontSize: 12, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={13} /> {error}</div>}
-            <button onClick={submitPassword} style={{ width: '100%', background: C.wood, color: '#fff', border: 'none', borderRadius: 8, padding: '11px 0', fontFamily: fontBody, fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <Lock size={15} /> {t('login')}
+            <button onClick={submitPassword} disabled={checking} style={{ width: '100%', background: C.wood, color: '#fff', border: 'none', borderRadius: 8, padding: '11px 0', fontFamily: fontBody, fontWeight: 700, fontSize: 14, cursor: checking ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: checking ? 0.6 : 1 }}>
+              <Lock size={15} /> {checking ? '…' : t('login')}
             </button>
             <button onClick={() => setMode('faceid')} style={{ width: '100%', background: 'none', border: 'none', color: '#B8B2A0', marginTop: 14, fontFamily: fontBody, fontSize: 12.5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <Fingerprint size={14} /> {t('useFaceId')}
@@ -770,19 +771,17 @@ function LoginScreen({ onLogin, accounts }) {
     );
   }
 
-  // 第三步：密码 / Face ID 验证
+  // 第三步：密码 / Face ID 验证（实际密码比对在 AuthStep 内透过数据库函式处理，前端不接触密码）
   if (pendingUser) {
-    const acc = accounts.find(a => a.id === pendingUser.accountId);
-    const expectedPassword = acc ? acc.password : DEMO_PASSWORD;
-    return <AuthStep pendingUser={pendingUser} expectedPassword={expectedPassword} onBack={() => setPendingUser(null)} onSuccess={() => onLogin(pendingUser)} />;
+    return <AuthStep pendingUser={pendingUser} onBack={() => setPendingUser(null)} onSuccess={() => onLogin(pendingUser)} />;
   }
 
   // 第二步：选择具体人员 —— 名单来自 Finance 建立的账号，不是自行注册
   let people = [];
-  if (role === 'salesman') people = accounts.filter(a => a.role === 'salesman').map(a => ({ key: a.id, label: a.name, sub: teams[a.team]?.name, team: a.team, accountId: a.id }));
-  if (role === 'leader') people = accounts.filter(a => a.role === 'leader').map(a => ({ key: a.id, label: teams[a.team]?.name, sub: teams[a.team]?.leader ? `Team Leader · ${teams[a.team].leader}` : null, team: a.team, leaderName: teams[a.team]?.leader, accountId: a.id }));
-  if (role === 'admin') people = accounts.filter(a => a.role === 'admin').map(a => ({ key: a.id, label: a.name, team: null, accountId: a.id }));
-  if (role === 'finance') people = [{ key: 'finance', label: 'Finance User', team: null, accountId: null }];
+  if (role === 'salesman') people = accounts.filter(a => a.role === 'salesman').map(a => ({ key: a.id, label: a.name, sub: teams[a.team]?.name, team: a.team, accountId: a.id, email: a.email }));
+  if (role === 'leader') people = accounts.filter(a => a.role === 'leader').map(a => ({ key: a.id, label: teams[a.team]?.name, sub: teams[a.team]?.leader ? `Team Leader · ${teams[a.team].leader}` : null, team: a.team, leaderName: teams[a.team]?.leader, accountId: a.id, email: a.email }));
+  if (role === 'admin') people = accounts.filter(a => a.role === 'admin').map(a => ({ key: a.id, label: a.name, team: null, accountId: a.id, email: a.email }));
+  if (role === 'finance') people = accounts.filter(a => a.role === 'finance').map(a => ({ key: a.id, label: a.name || 'Finance User', team: null, accountId: a.id, email: a.email }));
 
   return (
     <div style={{ minHeight: '100vh', background: C.ink, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -795,7 +794,7 @@ function LoginScreen({ onLogin, accounts }) {
           <div style={{ color: '#8A8474', fontSize: 13, textAlign: 'center', maxWidth: 300 }}>{t('noAccountsYet')}</div>
         )}
         {people.map(p => (
-          <button key={p.key} onClick={() => setPendingUser({ role, name: p.label, team: p.team, leaderName: p.leaderName, accountId: p.accountId })}
+          <button key={p.key} onClick={() => setPendingUser({ role, name: p.label, team: p.team, leaderName: p.leaderName, accountId: p.accountId, email: p.email })}
             style={{ background: '#2C2E28', border: `1px solid #3C3D35`, borderRadius: 8, padding: '12px 16px', color: '#F5F1E8', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: fontBody, fontSize: 14 }}>
             <span>{p.label}{p.sub ? <span style={{ color: '#8A8474', fontSize: 12 }}> · {p.sub}</span> : ''}</span>
             <ChevronRight size={16} color={C.woodLight} />
@@ -814,13 +813,18 @@ function ChangePasswordPanel({ user, accounts, setAccounts, onClose }) {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
-  const acc = accounts.find(a => a.id === user.accountId);
+  const [checking, setChecking] = useState(false);
 
-  const submit = () => {
-    if (!acc || current !== acc.password) { setError(t('currentPasswordWrong')); return; }
+  const submit = async () => {
     if (!next.trim()) { setError(t('passwordTooShort')); return; }
     if (next !== confirm) { setError(t('passwordMismatch')); return; }
-    setAccounts(prev => prev.map(a => a.id === acc.id ? { ...a, password: next } : a));
+    setChecking(true);
+    // 用目前密码重新登入一次来确认「目前密码」真的是对的
+    const { error: verifyError } = await supabase.auth.signInWithPassword({ email: user.email, password: current });
+    if (verifyError) { setChecking(false); setError(t('currentPasswordWrong')); return; }
+    const { error: updateError } = await supabase.auth.updateUser({ password: next });
+    setChecking(false);
+    if (updateError) { setError(updateError.message); return; }
     setError(''); setDone(true);
   };
 
@@ -839,7 +843,7 @@ function ChangePasswordPanel({ user, accounts, setAccounts, onClose }) {
           </>
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-          {!done && <Btn icon={Lock} onClick={submit}>{t('save')}</Btn>}
+          {!done && <Btn icon={Lock} onClick={submit} disabled={checking}>{checking ? '…' : t('save')}</Btn>}
           <Btn variant="ghost" onClick={onClose}>{done ? t('confirm') : t('cancel')}</Btn>
         </div>
       </div>
@@ -1845,6 +1849,7 @@ function AccountsManager({ accounts, setAccounts }) {
   const { t } = useLang();
   const { teams, setTeams } = useTeamsCtx();
   const [creatingRole, setCreatingRole] = useState(null);
+  const [creatingBusy, setCreatingBusy] = useState(false);
   const [name, setName] = useState('');
   const [team, setTeam] = useState('');
   const [teamNameInput, setTeamNameInput] = useState('');
@@ -1855,42 +1860,54 @@ function AccountsManager({ accounts, setAccounts }) {
 
   const startCreate = (role) => { setCreatingRole(role); setName(''); setTeam(''); setTeamNameInput(''); setPassword(''); setError(''); };
 
-  const submitCreate = () => {
+  const submitCreate = async () => {
     if (!password.trim()) { setError(t('passwordTooShort')); return; }
+    let payload = null;
     if (creatingRole === 'salesman') {
       if (!name.trim()) { setError(t('accountName')); return; }
       if (!team) { setError(t('chooseTeam')); return; }
       const dup = accounts.some(a => a.role === 'salesman' && a.name.trim().toLowerCase() === name.trim().toLowerCase());
       if (dup) { setError(t('errSalesmanNameDuplicate', { name: name.trim() })); return; }
-      setAccounts(prev => [...prev, { id: Date.now(), role: 'salesman', name: name.trim(), team, password }]);
+      payload = { role: 'salesman', name: name.trim(), team, password };
     } else if (creatingRole === 'leader') {
       const typedName = teamNameInput.trim();
       if (!typedName) { setError(t('accountTeam')); return; }
       const existing = Object.values(teams).find(tm => tm.name.trim().toLowerCase() === typedName.toLowerCase());
+      let teamId;
       if (existing) {
         const already = accounts.some(a => a.role === 'leader' && a.team === existing.id);
         if (already) { setError(t('errTeamHasLeader', { name: typedName })); return; }
-        setAccounts(prev => [...prev, { id: Date.now(), role: 'leader', team: existing.id, password }]);
+        teamId = existing.id;
       } else {
-        const newId = `team_${Date.now()}`;
-        setTeams(prev => ({ ...prev, [newId]: { id: newId, name: typedName, leader: null, members: [] } }));
-        setAccounts(prev => [...prev, { id: Date.now(), role: 'leader', team: newId, password }]);
+        teamId = `team_${Date.now()}`;
+        setTeams(prev => ({ ...prev, [teamId]: { id: teamId, name: typedName, leader: null, members: [] } }));
       }
+      payload = { role: 'leader', team: teamId, password };
     } else if (creatingRole === 'admin') {
       if (!name.trim()) { setError(t('accountName')); return; }
-      setAccounts(prev => [...prev, { id: Date.now(), role: 'admin', name: name.trim(), password }]);
+      payload = { role: 'admin', name: name.trim(), password };
     }
+    if (!payload) return;
+    setCreatingBusy(true);
+    const { data, error: fnError } = await supabase.functions.invoke('accounts-admin', { body: { action: 'create', ...payload } });
+    setCreatingBusy(false);
+    if (fnError || data?.error) { setError((data && data.error) || fnError.message); return; }
+    setAccounts(prev => [...prev, accountRowToApp(data)]);
     setCreatingRole(null);
   };
 
-  const confirmReset = (id) => {
+  const confirmReset = async (id) => {
     if (!resetValue.trim()) return;
-    setAccounts(prev => prev.map(a => a.id === id ? { ...a, password: resetValue } : a));
+    const { data, error: fnError } = await supabase.functions.invoke('accounts-admin', { body: { action: 'resetPassword', userId: id, newPassword: resetValue } });
+    if (fnError || data?.error) { console.error(fnError || data.error); return; }
     setResettingId(null); setResetValue('');
   };
-  const deleteAccount = (id) => setAccounts(prev => prev.filter(a => a.id !== id));
+  const deleteAccount = async (id) => {
+    setAccounts(prev => prev.filter(a => a.id !== id));
+    await supabase.functions.invoke('accounts-admin', { body: { action: 'delete', userId: id } });
+  };
 
-  const roleLabel = (r) => ({ salesman: t('role_salesman'), leader: t('role_leader'), admin: t('role_admin') }[r] || r);
+  const roleLabel = (r) => ({ salesman: t('role_salesman'), leader: t('role_leader'), admin: t('role_admin'), finance: t('role_finance') }[r] || r);
   const nameTeamLabel = (a) => a.role === 'leader' ? (teams[a.team]?.leader ? `${teams[a.team]?.name} (${teams[a.team].leader})` : teams[a.team]?.name) : a.role === 'salesman' ? `${a.name} · ${teams[a.team]?.name}` : a.name;
 
   return (
@@ -1947,7 +1964,7 @@ function AccountsManager({ accounts, setAccounts }) {
           </div>
           {error && <div style={{ color: C.brick, fontSize: 12, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={13} /> {error}</div>}
           <div style={{ display: 'flex', gap: 6 }}>
-            <Btn size="sm" icon={CheckCircle2} onClick={submitCreate}>{t('create')}</Btn>
+            <Btn size="sm" icon={CheckCircle2} onClick={submitCreate} disabled={creatingBusy}>{creatingBusy ? '…' : t('create')}</Btn>
             <Btn size="sm" variant="ghost" onClick={() => setCreatingRole(null)}>{t('cancel')}</Btn>
           </div>
         </div>
@@ -1975,7 +1992,7 @@ function AccountsManager({ accounts, setAccounts }) {
                   ) : '••••••'}
                 </td>
                 <td style={td}>
-                  {resettingId !== a.id && (
+                  {resettingId !== a.id && a.role !== 'finance' && (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <Btn size="sm" variant="outline" icon={Lock} onClick={() => { setResettingId(a.id); setResetValue(''); }}>{t('resetPassword')}</Btn>
                       <Btn size="sm" variant="brick" icon={Trash2} onClick={() => deleteAccount(a.id)}>{t('delete')}</Btn>
@@ -2303,9 +2320,9 @@ function ItemEditor({ item, existingItems = [], onSave, onCancel }) {
 }
 
 /* ============================== Main App ============================== */
-function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts }) {
+function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts, initialUser }) {
   const { t } = useLang();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(initialUser || null);
   const [view, setView] = useState('home');
   const [orders, setOrders] = useState(initialOrders || []);
   const [claims, setClaims] = useState(initialClaims || []);
@@ -2316,7 +2333,8 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts 
   useEffect(() => { if (ready) upsertRows('orders', orders.map(orderAppToRow)); }, [orders]);
   useEffect(() => { if (ready) upsertRows('claims', claims.map(claimAppToRow)); }, [claims]);
   useEffect(() => { if (ready) replaceTable('items', items.map(itemAppToRow)); }, [items]);
-  useEffect(() => { if (ready) replaceTable('accounts', accounts.map(accountAppToRow)); }, [accounts]);
+  // 注意：accounts 不用整批同步（前端已经不存密码，整批写回去会把密码清空），
+  // 新增/重设密码/删除都在 AccountsManager 里直接、个别地写入数据库
 
   const navMap = {
     salesman: [{ id: 'home', label: t('nav_dashboard'), icon: LayoutDashboard }],
@@ -2336,7 +2354,7 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts 
       {!user ? (
         <LoginScreen accounts={accounts} onLogin={(u) => { setUser(u); setView('home'); }} />
       ) : (
-        <Shell user={user} view={view} setView={setView} navItems={navMap[user.role]} onLogout={() => setUser(null)} accounts={accounts} setAccounts={setAccounts}>
+        <Shell user={user} view={view} setView={setView} navItems={navMap[user.role]} onLogout={() => { supabase.auth.signOut(); setUser(null); }} accounts={accounts} setAccounts={setAccounts}>
           {user.role === 'salesman' && <SalesmanDashboard user={user} orders={orders} items={items} setOrders={setOrders} setClaims={setClaims} accounts={accounts} />}
           {user.role === 'leader' && <LeaderDashboard user={user} orders={orders} claims={claims} accounts={accounts} />}
           {user.role === 'admin' && <AdminDashboard orders={orders} setOrders={setOrders} items={items} setItems={setItems} />}
@@ -2368,7 +2386,7 @@ export default function FurnitureOpsPrototype() {
       try {
         let [teamsRes, accountsRes, itemsRes, ordersRes, claimsRes] = await Promise.all([
           supabase.from('teams').select('*'),
-          supabase.from('accounts').select('*'),
+          supabase.from('profiles').select('*'),
           supabase.from('items').select('*'),
           supabase.from('orders').select('*'),
           supabase.from('claims').select('*'),
@@ -2380,8 +2398,13 @@ export default function FurnitureOpsPrototype() {
           teamsRes = await supabase.from('teams').select('*');
         }
         if (!accountsRes.error && accountsRes.data.length === 0) {
-          await supabase.from('accounts').insert(INIT_ACCOUNTS.map(accountAppToRow));
-          accountsRes = await supabase.from('accounts').select('*');
+          // 账号现在是真正的 Supabase Auth 用户，要透过 Edge Function 一个一个建立
+          for (const a of INIT_ACCOUNTS) {
+            await supabase.functions.invoke('accounts-admin', { body: { action: 'create', role: a.role, name: a.name, team: a.team, password: a.password } });
+          }
+          // Finance 的登入账号（种子资料本身没有，额外建一个）
+          await supabase.functions.invoke('accounts-admin', { body: { action: 'create', role: 'finance', name: 'Finance User', password: '1234' } });
+          accountsRes = await supabase.from('profiles').select('*');
         }
         if (!itemsRes.error && itemsRes.data.length === 0) {
           await supabase.from('items').insert(INIT_ITEMS.map(itemAppToRow));
@@ -2399,13 +2422,31 @@ export default function FurnitureOpsPrototype() {
         const firstError = [teamsRes, accountsRes, itemsRes, ordersRes, claimsRes].find(r => r.error);
         if (firstError) throw firstError.error;
 
+        const teamsMap = teamsRowsToMap(teamsRes.data);
+        const accountsList = accountsRes.data.map(accountRowToApp);
+
+        // 如果浏览器还留着有效的登入 session，直接还原登入状态，不用重新登入
+        let restoredUser = null;
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user) {
+          const acc = accountsList.find(a => a.id === sessionData.session.user.id);
+          if (acc) {
+            restoredUser = {
+              role: acc.role, name: acc.role === 'leader' ? teamsMap[acc.team]?.name : acc.name,
+              team: acc.team, accountId: acc.id, email: acc.email,
+              leaderName: acc.role === 'leader' ? teamsMap[acc.team]?.leader : undefined,
+            };
+          }
+        }
+
         if (!cancelled) {
           setData({
-            teams: teamsRowsToMap(teamsRes.data),
-            accounts: accountsRes.data.map(accountRowToApp),
+            teams: teamsMap,
+            accounts: accountsList,
             items: itemsRes.data.map(itemRowToApp),
             orders: ordersRes.data.map(orderRowToApp),
             claims: claimsRes.data.map(claimRowToApp),
+            initialUser: restoredUser,
           });
           setLoading(false);
         }
@@ -2434,7 +2475,7 @@ export default function FurnitureOpsPrototype() {
   return (
     <LangProvider>
       <TeamsProvider initialTeams={data.teams}>
-        <AppInner initialAccounts={data.accounts} initialItems={data.items} initialOrders={data.orders} initialClaims={data.claims} />
+        <AppInner initialAccounts={data.accounts} initialItems={data.items} initialOrders={data.orders} initialClaims={data.claims} initialUser={data.initialUser} />
       </TeamsProvider>
     </LangProvider>
   );
