@@ -75,13 +75,13 @@ const STRINGS = {
   welcomeBack: { zh: '欢迎回来', en: 'Welcome back' },
   claimCommission: { zh: '申请佣金', en: 'Claim Commission' },
   newOrder: { zh: '新增订单', en: 'New Order' },
-  statTeamTotal: { zh: '团队总业绩（已开SO）', en: 'Team Total (SO Issued)' },
+  statTeamTotal: { zh: '团队本月业绩（已开SO）', en: 'Team Total This Month (SO Issued)' },
   statMyOrders: { zh: '我的订单', en: 'My Orders' },
   statPendingSoCount: { zh: '笔待开SO', en: 'pending SO' },
   statMyClaims: { zh: '我的佣金申请', en: 'My Commission Claims' },
   view: { zh: '查看', en: 'View' },
   clickToStart: { zh: '点击「申请佣金」开始', en: 'Click "Claim Commission" to start' },
-  teamResultTitle: { zh: '团队业绩（全员可见）', en: 'Team Results (visible to all)' },
+  teamResultTitle: { zh: '团队本月业绩（全员可见）', en: 'Team Results This Month (visible to all)' },
   myOrdersTitle: { zh: '我的订单记录', en: 'My Order Records' },
   editResubmit: { zh: '编辑并重新提交', en: 'Edit & Resubmit' },
   changeModel: { zh: '换款', en: 'Change Model' },
@@ -339,13 +339,18 @@ const STRINGS = {
   subtotalLabel: { zh: '小计', en: 'Subtotal' },
   depositUploadPlaceholder: { zh: '点击上传（图片/PDF）', en: 'Click to upload (image/PDF)' },
   salesmenCountSuffix: { zh: '位销售员', en: 'salesmen' },
-  soIssuedSalesLabel: { zh: '已开SO的销售', en: 'SO Issued Sales' },
+  soIssuedSalesLabel: { zh: '本月已开SO的销售', en: 'SO Issued Sales This Month' },
   incompleteSalesLabel: { zh: '待申请佣金', en: 'Pending Claim' },
   completedSalesLabel: { zh: '已申请佣金', en: 'Claim Submitted' },
   incompleteSalesTitle: { zh: '待申请佣金（尚未提交）', en: 'Pending Commission Claim' },
   completedSalesTitle: { zh: '已申请佣金（已提交）', en: 'Commission Claim Submitted' },
   noIncompleteSales: { zh: '目前没有待申请佣金的订单', en: 'No orders pending a commission claim' },
   noCompletedSales: { zh: '目前还没有已申请佣金的订单', en: 'No commission claims submitted yet' },
+  nav_history: { zh: '历史记录', en: 'History' },
+  historyTitle: { zh: '历史销售记录', en: 'Sales History' },
+  noHistoryYet: { zh: '还没有以往月份的记录', en: 'No past months yet' },
+  totalSalesLabel: { zh: '总业绩', en: 'Total Sales' },
+  currentMonthNote: { zh: '（本月资料显示在仪表板，这里只看以往月份）', en: '(This month\u2019s data is on the dashboard; this only shows past months.)' },
   ordersCountPrefix: { zh: '共', en: 'Total' },
   ordersCountSuffix: { zh: '笔订单', en: 'orders' },
   viewWord: { zh: '查看', en: 'View' },
@@ -456,6 +461,13 @@ const INIT_CLAIMS = [
 ];
 
 const RM = n => `RM ${Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`;
+const monthKey = dateStr => (dateStr ? dateStr.slice(0, 7) : '');
+const currentMonthKey = () => new Date().toISOString().slice(0, 7);
+const formatMonthLabel = (m, lang) => {
+  const [y, mo] = m.split('-').map(Number);
+  const d = new Date(y, mo - 1, 1);
+  return d.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'long' });
+};
 const PAYMENT_METHODS = [
   { code: 'bank', key: 'payMethodBank' },
   { code: 'cash', key: 'payMethodCash' },
@@ -933,9 +945,10 @@ function Shell({ user, view, setView, navItems, onLogout, accounts, setAccounts,
 /* ============================== 团队业绩图 ============================== */
 function TeamChart({ team, orders, accounts }) {
   const members = accounts.filter(a => a.role === 'salesman' && a.team === team.id).map(a => a.name);
+  const thisMonth = currentMonthKey();
   const data = members.map(m => ({
     name: m.split(' ')[0],
-    sales: orders.filter(o => o.agent === m && o.status === 'so_opened').reduce((s, o) => s + o.total, 0),
+    sales: orders.filter(o => o.agent === m && o.status === 'so_opened' && monthKey(o.date) === thisMonth).reduce((s, o) => s + o.total, 0),
   }));
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '18px 20px', height: 260 }}>
@@ -1009,6 +1022,49 @@ function OrderTable({ orders, showAgent = true, actions }) {
 const th = { textAlign: 'left', padding: '10px 14px', fontSize: 11.5, letterSpacing: '0.04em', color: C.wood, fontWeight: 700, textTransform: 'uppercase' };
 const td = { padding: '11px 14px', color: C.ink, verticalAlign: 'top' };
 
+function SalesHistory({ orders, showAgent = false }) {
+  const { t, lang } = useLang();
+  const [selectedMonth, setSelectedMonth] = useState(null);
+  const soOrders = orders.filter(o => o.status === 'so_opened');
+  const thisMonth = currentMonthKey();
+  const pastOrders = soOrders.filter(o => monthKey(o.date) && monthKey(o.date) !== thisMonth);
+  const months = [...new Set(pastOrders.map(o => monthKey(o.date)))].sort().reverse();
+  const monthOrders = m => pastOrders.filter(o => monthKey(o.date) === m);
+  const monthTotal = m => monthOrders(m).reduce((s, o) => s + o.total, 0);
+  const active = selectedMonth && months.includes(selectedMonth) ? selectedMonth : months[0] || null;
+
+  return (
+    <div>
+      <SectionTitle eyebrow="History" title={t('historyTitle')} />
+      <div style={{ fontSize: 12, color: C.sub, marginBottom: 16 }}>{t('currentMonthNote')}</div>
+      {months.length === 0 ? (
+        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 30, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noHistoryYet')}</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+            {months.map(m => (
+              <button key={m} onClick={() => setSelectedMonth(m)}
+                style={{
+                  textAlign: 'left', border: `1.5px solid ${active === m ? C.wood : C.line}`, background: active === m ? C.woodTint : C.surface,
+                  borderRadius: 10, padding: '10px 16px', cursor: 'pointer', minWidth: 140,
+                }}>
+                <div style={{ fontFamily: fontBody, fontSize: 12.5, fontWeight: 600, color: C.ink }}>{formatMonthLabel(m, lang)}</div>
+                <div style={{ fontFamily: fontMono, fontSize: 14, fontWeight: 700, color: C.wood, marginTop: 2 }}>{RM(monthTotal(m))}</div>
+              </button>
+            ))}
+          </div>
+          {active && (
+            <>
+              <SectionTitle title={`${formatMonthLabel(active, lang)} · ${t('totalSalesLabel')} ${RM(monthTotal(active))}`} />
+              <OrderTable orders={monthOrders(active)} showAgent={showAgent} />
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ============================== Salesman ============================== */
 function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, accounts }) {
   const { t } = useLang();
@@ -1018,10 +1074,11 @@ function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, 
   const team = teams[user.team];
   const myOrders = orders.filter(o => o.agent === user.name);
   const teamOrders = orders.filter(o => o.team === user.team);
-  const teamTotal = teamOrders.filter(o => o.status === 'so_opened').reduce((s, o) => s + o.total, 0);
+  const thisMonth = currentMonthKey();
+  const teamTotal = teamOrders.filter(o => o.status === 'so_opened' && monthKey(o.date) === thisMonth).reduce((s, o) => s + o.total, 0);
   const teamMemberCount = accounts.filter(a => a.role === 'salesman' && a.team === user.team).length;
 
-  const mySoOrders = myOrders.filter(o => o.status === 'so_opened');
+  const mySoOrders = myOrders.filter(o => o.status === 'so_opened' && monthKey(o.date) === thisMonth);
   const myClaims = claims.filter(c => c.agent === user.name);
   const claimedOrderIds = new Set(myClaims.map(c => c.orderId));
   const incompleteSales = mySoOrders.filter(o => !claimedOrderIds.has(o.id));
@@ -1603,7 +1660,8 @@ function LeaderDashboard({ user, orders, claims, accounts }) {
   const { teams } = useTeamsCtx();
   const team = teams[user.team];
   const teamOrders = orders.filter(o => o.team === user.team);
-  const total = teamOrders.filter(o => o.status === 'so_opened').reduce((s, o) => s + o.total, 0);
+  const thisMonth = currentMonthKey();
+  const total = teamOrders.filter(o => o.status === 'so_opened' && monthKey(o.date) === thisMonth).reduce((s, o) => s + o.total, 0);
 
   return (
     <div>
@@ -2414,8 +2472,8 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
   // 新增/重设密码/删除都在 AccountsManager 里直接、个别地写入数据库
 
   const navMap = {
-    salesman: [{ id: 'home', label: t('nav_dashboard'), icon: LayoutDashboard }],
-    leader: [{ id: 'home', label: t('nav_team_overview'), icon: LayoutDashboard }],
+    salesman: [{ id: 'home', label: t('nav_dashboard'), icon: LayoutDashboard }, { id: 'history', label: t('nav_history'), icon: Clock }],
+    leader: [{ id: 'home', label: t('nav_team_overview'), icon: LayoutDashboard }, { id: 'history', label: t('nav_history'), icon: Clock }],
     admin: [{ id: 'home', label: t('nav_pending_so'), icon: LayoutDashboard }],
     finance: [{ id: 'home', label: t('nav_finance_console'), icon: LayoutDashboard }],
   };
@@ -2432,8 +2490,10 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
         <LoginScreen accounts={accounts} onLogin={(u) => { setUser(u); setView('home'); }} />
       ) : (
         <Shell user={user} view={view} setView={setView} navItems={navMap[user.role]} onLogout={() => { supabase.auth.signOut(); setUser(null); }} accounts={accounts} setAccounts={setAccounts}>
-          {user.role === 'salesman' && <SalesmanDashboard user={user} orders={orders} items={items} claims={claims} setOrders={setOrders} setClaims={setClaims} accounts={accounts} />}
-          {user.role === 'leader' && <LeaderDashboard user={user} orders={orders} claims={claims} accounts={accounts} />}
+          {user.role === 'salesman' && view === 'home' && <SalesmanDashboard user={user} orders={orders} items={items} claims={claims} setOrders={setOrders} setClaims={setClaims} accounts={accounts} />}
+          {user.role === 'salesman' && view === 'history' && <SalesHistory orders={orders.filter(o => o.agent === user.name)} />}
+          {user.role === 'leader' && view === 'home' && <LeaderDashboard user={user} orders={orders} claims={claims} accounts={accounts} />}
+          {user.role === 'leader' && view === 'history' && <SalesHistory orders={orders.filter(o => o.team === user.team)} showAgent />}
           {user.role === 'admin' && <AdminDashboard orders={orders} setOrders={setOrders} items={items} setItems={setItems} />}
           {user.role === 'finance' && <FinanceDashboard orders={orders} claims={claims} setClaims={setClaims} items={items} setItems={setItems} accounts={accounts} setAccounts={setAccounts} />}
         </Shell>
