@@ -358,8 +358,9 @@ const STRINGS = {
   filterStatusAll: { zh: '全部状态', en: 'All Status' },
   filterStatusSoOpened: { zh: '已开SO', en: 'SO Issued' },
   filterStatusPendingSo: { zh: '未开SO', en: 'SO Not Issued' },
-  filterStatusClaimed: { zh: '已申请佣金', en: 'Commission Claimed' },
-  filterStatusNotClaimed: { zh: '还没申请佣金', en: 'Commission Not Claimed' },
+  filterStatusClaimed: { zh: '已核实佣金', en: 'Commission Verified' },
+  filterStatusNotClaimed: { zh: '未申请佣金', en: 'Commission Not Claimed' },
+  filterStatusClaimPending: { zh: '佣金审核中', en: 'Commission Under Review' },
   ordersTabTitle: { zh: '订单查询', en: 'Order Search' },
   searchOrderIdPlaceholder: { zh: '搜索订单编号 Order ID…', en: 'Search Order ID…' },
   ordersTab: { zh: '订单', en: 'Orders' },
@@ -987,12 +988,15 @@ function TeamChart({ team, orders, accounts }) {
 /* ============================== 订单表 ============================== */
 function filterOrdersBySearch(orders, query, statusFilter, claims) {
   const q = (query || '').trim().toLowerCase();
-  const claimedIds = new Set((claims || []).map(c => c.orderId));
+  const claimByOrder = new Map();
+  (claims || []).forEach(c => { if (!claimByOrder.has(c.orderId)) claimByOrder.set(c.orderId, c); });
   return orders.filter(o => {
     if (statusFilter === 'so_opened' && o.status !== 'so_opened') return false;
     if (statusFilter === 'pending_so' && o.status !== 'pending_so') return false;
-    if (statusFilter === 'claimed' && !claimedIds.has(o.id)) return false;
-    if (statusFilter === 'not_claimed' && (o.status !== 'so_opened' || claimedIds.has(o.id))) return false;
+    const claim = claimByOrder.get(o.id);
+    if (statusFilter === 'not_claimed' && (o.status !== 'so_opened' || claim)) return false;
+    if (statusFilter === 'claim_pending' && (!claim || claim.status !== 'pending')) return false;
+    if (statusFilter === 'claimed' && (!claim || claim.status !== 'verified')) return false;
     if (q) {
       const matchesId = o.id.toLowerCase().includes(q);
       const matchesSo = (o.soNumber || '').toLowerCase().includes(q);
@@ -1008,7 +1012,7 @@ function OrderSearchBar({ query, setQuery, statusFilter, setStatusFilter, showCl
     ['all', t('filterStatusAll')],
     ['so_opened', t('filterStatusSoOpened')],
     ['pending_so', t('filterStatusPendingSo')],
-    ...(showClaimFilter ? [['claimed', t('filterStatusClaimed')], ['not_claimed', t('filterStatusNotClaimed')]] : []),
+    ...(showClaimFilter ? [['not_claimed', t('filterStatusNotClaimed')], ['claim_pending', t('filterStatusClaimPending')], ['claimed', t('filterStatusClaimed')]] : []),
   ];
   return (
     <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -1208,7 +1212,7 @@ function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, 
       </div>
 
       <SectionTitle eyebrow="My Orders" title={t('myOrdersTitle')} />
-      <OrderTable orders={myOrders} showAgent={false} actions={o => {
+      <OrderTable orders={myOrders} claims={claims} showAgent={false} actions={o => {
         if (o.status === 'so_rejected') return <Btn size="sm" variant="outline" icon={Edit3} onClick={() => { setEditingOrder(o); setView('editOrder'); }}>{t('editResubmit')}</Btn>;
         if (o.status === 'so_opened') return <Btn size="sm" variant="outline" icon={RefreshCw} onClick={() => { setEditingOrder(o); setView('editOrder'); }}>{t('changeModel')}</Btn>;
         return null;
