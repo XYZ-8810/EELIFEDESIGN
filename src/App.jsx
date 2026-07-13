@@ -326,7 +326,7 @@ const STRINGS = {
   errPriceZero: { zh: '价格不可为 0，请填入实际售价', en: 'Price cannot be 0 \u2014 please enter the actual price' },
   errStockZero: { zh: '库存不可为 0，请填入实际库存数量', en: 'Stock cannot be 0 \u2014 please enter the actual stock quantity' },
   errCategoryRequired: { zh: '请选择商品分类', en: 'Please select a category' },
-  errAddOnZero: { zh: '加购项「{name}」的库存与价格都不可为 0', en: 'Add-on "{name}": stock and price cannot both be 0' },
+  errAddOnZero: { zh: '加购项「{name}」的库存不可为 0，价格不可为负数', en: 'Add-on "{name}": stock cannot be 0, price cannot be negative' },
   errCodeDuplicate: { zh: '商品编号「{code}」已被使用，请改用其他编号', en: 'Product code "{code}" is already in use \u2014 please choose another' },
   unnamedAddOn: { zh: '未命名', en: 'Unnamed' },
   errSalesmanNameDuplicate: { zh: '{name} 的账号已存在，请改用其他姓名', en: 'An account for {name} already exists \u2014 please use a different name' },
@@ -2273,7 +2273,7 @@ function ItemEditor({ item, existingItems = [], onSave, onCancel }) {
     if (!d.price || Number(d.price) <= 0) { setError(t('errPriceZero')); return; }
     if (!d.stock || Number(d.stock) <= 0) { setError(t('errStockZero')); return; }
     if (!d.category) { setError(t('errCategoryRequired')); return; }
-    const badAddOn = d.addOns.find(a => !a.price || Number(a.price) <= 0 || !a.stock || Number(a.stock) <= 0);
+    const badAddOn = d.addOns.find(a => a.price == null || a.price === '' || Number(a.price) < 0 || !a.stock || Number(a.stock) <= 0);
     if (badAddOn) { setError(t('errAddOnZero', { name: badAddOn.name || t('unnamedAddOn') })); return; }
     const dup = existingItems.some(x => x.id !== d.id && x.code.trim().toLowerCase() === d.code.trim().toLowerCase());
     if (dup) { setError(t('errCodeDuplicate', { code: d.code })); return; }
