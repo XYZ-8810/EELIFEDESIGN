@@ -547,6 +547,17 @@ async function upsertRows(table, rows) {
 }
 async function upsertTeams(rows) { return upsertRows('teams', rows); }
 
+// 把文件真的传到对应的 Google Drive 资料夹（透过 drive-upload Edge Function）
+async function uploadToDrive(file, docType) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('docType', docType);
+  formData.append('fileName', file.name);
+  const { data, error } = await supabase.functions.invoke('drive-upload', { body: formData });
+  if (error || data?.error) throw new Error((data && data.error) || error.message);
+  return data.url;
+}
+
 /* ============================== 小组件 ============================== */
 function StampBadge({ status }) {
   const { t } = useLang();
@@ -1188,6 +1199,8 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
   const [depositSlip, setDepositSlip] = useState(editOrder?.depositSlip || null);
   const [depositSlipUrl, setDepositSlipUrl] = useState(editOrder?.depositSlipUrl || null);
   const [depositSlipType, setDepositSlipType] = useState(editOrder?.depositSlipType || '');
+  const [uploadingLogistic, setUploadingLogistic] = useState(false);
+  const [uploadingDeposit, setUploadingDeposit] = useState(false);
   const [errors, setErrors] = useState([]);
 
   const lineDetail = (line) => {
@@ -1253,6 +1266,7 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
 
   return (
     <div style={{ maxWidth: 620 }}>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       <button onClick={onCancel} style={{ background: 'none', border: 'none', color: C.sub, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginBottom: 14, fontSize: 13, fontFamily: fontBody }}>
         <ArrowLeft size={14} /> {t('backToDashboard')}
       </button>
@@ -1335,13 +1349,20 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
               </Field>
               <div>
                 <div style={{ fontFamily: fontBody, fontSize: 12.5, color: C.sub, marginBottom: 6, fontWeight: 600 }}>{t('depositSlipLabel')}</div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.line}`, borderRadius: 6, padding: '9px 12px', cursor: 'pointer', background: '#fff' }}>
-                  <UploadCloud size={16} color={C.wood} />
-                  <span style={{ fontSize: 12.5, color: depositSlip ? C.ink : C.sub }}>{depositSlip || t('depositUploadPlaceholder')}</span>
-                  <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={e => {
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.line}`, borderRadius: 6, padding: '9px 12px', cursor: uploadingDeposit ? 'default' : 'pointer', background: '#fff' }}>
+                  {uploadingDeposit ? <Loader2 size={16} color={C.wood} style={{ animation: 'spin 1s linear infinite' }} /> : <UploadCloud size={16} color={C.wood} />}
+                  <span style={{ fontSize: 12.5, color: depositSlip ? C.ink : C.sub }}>{uploadingDeposit ? '…' : (depositSlip || t('depositUploadPlaceholder'))}</span>
+                  <input type="file" accept="image/*,application/pdf" disabled={uploadingDeposit} style={{ display: 'none' }} onChange={async e => {
                     const f = e.target.files[0];
                     if (!f) return;
-                    setDepositSlip(f.name); setDepositSlipUrl(URL.createObjectURL(f)); setDepositSlipType(f.type);
+                    setUploadingDeposit(true);
+                    try {
+                      const url = await uploadToDrive(f, 'deposit_slip');
+                      setDepositSlip(f.name); setDepositSlipUrl(url); setDepositSlipType(f.type);
+                    } catch (err) {
+                      alert(err.message);
+                    }
+                    setUploadingDeposit(false);
                   }} />
                 </label>
               </div>
@@ -1366,15 +1387,22 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
             <div style={{ fontSize: 12, color: C.sub, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <MessageCircle size={13} /> {t('logisticNote')}
             </div>
-            <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.line}`, borderRadius: 8, padding: '22px 14px', cursor: 'pointer', color: C.sub }}>
-              <UploadCloud size={20} color={C.wood} />
-              <span style={{ fontSize: 12.5 }}>{logisticFile ? logisticFile : t('clickToSelectScreenshot')}</span>
-              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+            <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.line}`, borderRadius: 8, padding: '22px 14px', cursor: uploadingLogistic ? 'default' : 'pointer', color: C.sub }}>
+              {uploadingLogistic ? <Loader2 size={20} color={C.wood} style={{ animation: 'spin 1s linear infinite' }} /> : <UploadCloud size={20} color={C.wood} />}
+              <span style={{ fontSize: 12.5 }}>{uploadingLogistic ? '…' : (logisticFile ? logisticFile : t('clickToSelectScreenshot'))}</span>
+              <input type="file" accept="image/*" disabled={uploadingLogistic} style={{ display: 'none' }} onChange={async e => {
                 const f = e.target.files[0];
                 if (!f) return;
-                setLogisticFile(f.name);
-                setLogisticFileUrl(URL.createObjectURL(f));
-                setLogisticFileType(f.type);
+                setUploadingLogistic(true);
+                try {
+                  const url = await uploadToDrive(f, 'logistics_proof');
+                  setLogisticFile(f.name);
+                  setLogisticFileUrl(url);
+                  setLogisticFileType(f.type);
+                } catch (err) {
+                  alert(err.message);
+                }
+                setUploadingLogistic(false);
               }} />
             </label>
           </div>
@@ -1385,7 +1413,7 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
         <Field label={t('remarkLabel')}><textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={remark} onChange={e => setRemark(e.target.value)} placeholder={t('phRemarkExample')} /></Field>
       </div>
 
-      <Btn icon={CheckCircle2} onClick={submit}>{editOrder ? t('resubmitToAdmin') : t('submitToAdmin')}</Btn>
+      <Btn icon={CheckCircle2} onClick={submit} disabled={uploadingDeposit || uploadingLogistic}>{editOrder ? t('resubmitToAdmin') : t('submitToAdmin')}</Btn>
     </div>
   );
 }
@@ -1404,6 +1432,7 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
   const [method, setMethod] = useState('bank');
   const [slipFile, setSlipFile] = useState(null);
   const [slipExt, setSlipExt] = useState('jpg');
+  const [uploadingSlip, setUploadingSlip] = useState(false);
   const [slipUrl, setSlipUrl] = useState(null);
   const [slipType, setSlipType] = useState('');
   const [slipAmount, setSlipAmount] = useState('');
@@ -1441,6 +1470,7 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
 
   return (
     <div style={{ maxWidth: 560 }}>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       <button onClick={() => setView('home')} style={{ background: 'none', border: 'none', color: C.sub, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginBottom: 14, fontSize: 13, fontFamily: fontBody }}>
         <ArrowLeft size={14} /> {t('backToDashboard')}
       </button>
@@ -1486,16 +1516,23 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
         {step === 3 && (
           <div>
             <Field label={t('uploadSlipLabel')}>
-              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.line}`, borderRadius: 8, padding: '26px 14px', cursor: 'pointer', color: C.sub }}>
-                <UploadCloud size={22} color={C.wood} />
-                <span style={{ fontSize: 12.5 }}>{slipFile ? slipFile : t('clickToChooseFile')}</span>
-                <input type="file" style={{ display: 'none' }} onChange={e => {
+              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.line}`, borderRadius: 8, padding: '26px 14px', cursor: uploadingSlip ? 'default' : 'pointer', color: C.sub }}>
+                {uploadingSlip ? <Loader2 size={22} color={C.wood} style={{ animation: 'spin 1s linear infinite' }} /> : <UploadCloud size={22} color={C.wood} />}
+                <span style={{ fontSize: 12.5 }}>{uploadingSlip ? '…' : (slipFile ? slipFile : t('clickToChooseFile'))}</span>
+                <input type="file" disabled={uploadingSlip} style={{ display: 'none' }} onChange={async e => {
                   const f = e.target.files[0];
                   if (!f) return;
                   const ext = f.name.includes('.') ? f.name.split('.').pop().toLowerCase() : 'jpg';
-                  setSlipFile(f.name); setSlipExt(ext);
-                  setSlipUrl(URL.createObjectURL(f)); setSlipType(f.type);
-                  setTransferOk(true); setSlipAmount(String(order.total + 100));
+                  setUploadingSlip(true);
+                  try {
+                    const url = await uploadToDrive(f, 'bank_slip');
+                    setSlipFile(f.name); setSlipExt(ext);
+                    setSlipUrl(url); setSlipType(f.type);
+                    setTransferOk(true); setSlipAmount(String(order.total + 100));
+                  } catch (err) {
+                    alert(err.message);
+                  }
+                  setUploadingSlip(false);
                 }} />
               </label>
             </Field>
@@ -1533,7 +1570,7 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
         <Btn variant="outline" icon={ChevronLeft} onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1}>{t('prev')}</Btn>
-        {step < 4 && <Btn icon={ChevronRight} onClick={() => setStep(s => s + 1)} disabled={(step === 1 && !orderId) || (step === 3 && !slipFile)}>{t('next')}</Btn>}
+        {step < 4 && <Btn icon={ChevronRight} onClick={() => setStep(s => s + 1)} disabled={(step === 1 && !orderId) || (step === 3 && (!slipFile || uploadingSlip))}>{t('next')}</Btn>}
         {step === 4 && <Btn icon={CheckCircle2} onClick={submitClaim}>{t('submitToFinance')}</Btn>}
       </div>
     </div>
