@@ -353,6 +353,16 @@ const STRINGS = {
   currentMonthNote: { zh: '（本月资料显示在仪表板，这里只看以往月份）', en: '(This month\u2019s data is on the dashboard; this only shows past months.)' },
   orderDateTimeCol: { zh: '提交时间', en: 'Submitted At' },
   lastEditedLabel: { zh: '最后编辑：', en: 'Last edited:' },
+  tabOrders: { zh: '订单', en: 'Orders' },
+  searchOrderPlaceholder: { zh: '搜索订单编号或SO编号…', en: 'Search order ID or SO ID…' },
+  filterStatusAll: { zh: '全部状态', en: 'All Status' },
+  filterStatusSoOpened: { zh: '已开SO', en: 'SO Issued' },
+  filterStatusPendingSo: { zh: '未开SO', en: 'SO Not Issued' },
+  filterStatusClaimed: { zh: '已申请佣金', en: 'Commission Claimed' },
+  filterStatusNotClaimed: { zh: '还没申请佣金', en: 'Commission Not Claimed' },
+  ordersTabTitle: { zh: '订单查询', en: 'Order Search' },
+  searchOrderIdPlaceholder: { zh: '搜索订单编号 Order ID…', en: 'Search Order ID…' },
+  ordersTab: { zh: '订单', en: 'Orders' },
   ordersCountPrefix: { zh: '共', en: 'Total' },
   ordersCountSuffix: { zh: '笔订单', en: 'orders' },
   viewWord: { zh: '查看', en: 'View' },
@@ -975,68 +985,120 @@ function TeamChart({ team, orders, accounts }) {
 }
 
 /* ============================== 订单表 ============================== */
-function OrderTable({ orders, showAgent = true, actions }) {
+function filterOrdersBySearch(orders, query, statusFilter, claims) {
+  const q = (query || '').trim().toLowerCase();
+  const claimedIds = new Set((claims || []).map(c => c.orderId));
+  return orders.filter(o => {
+    if (statusFilter === 'so_opened' && o.status !== 'so_opened') return false;
+    if (statusFilter === 'pending_so' && o.status !== 'pending_so') return false;
+    if (statusFilter === 'claimed' && !claimedIds.has(o.id)) return false;
+    if (statusFilter === 'not_claimed' && (o.status !== 'so_opened' || claimedIds.has(o.id))) return false;
+    if (q) {
+      const matchesId = o.id.toLowerCase().includes(q);
+      const matchesSo = (o.soNumber || '').toLowerCase().includes(q);
+      if (!matchesId && !matchesSo) return false;
+    }
+    return true;
+  });
+}
+
+function OrderSearchBar({ query, setQuery, statusFilter, setStatusFilter, showClaimFilter }) {
   const { t } = useLang();
+  const statusOptions = [
+    ['all', t('filterStatusAll')],
+    ['so_opened', t('filterStatusSoOpened')],
+    ['pending_so', t('filterStatusPendingSo')],
+    ...(showClaimFilter ? [['claimed', t('filterStatusClaimed')], ['not_claimed', t('filterStatusNotClaimed')]] : []),
+  ];
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
-        <thead>
-          <tr style={{ background: C.woodTint }}>
-            <th style={th}>{t('orderIdCol')}</th>
-            <th style={th}>{t('orderDateTimeCol')}</th>
-            <th style={th}>{t('customerCol')}</th>
-            {showAgent && <th style={th}>{t('agentCol')}</th>}
-            <th style={th}>POS Code</th>
-            <th style={th}>{t('itemsCol')}</th>
-            <th style={th}>{t('amountCol')}</th>
-            <th style={th}>{t('statusCol')}</th>
-            <th style={th}>{t('soFileCol')}</th>
-            {actions && <th style={th}></th>}
-          </tr>
-        </thead>
-        <tbody>
-          {orders.length === 0 && (
-            <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>
-          )}
-          {orders.map(o => (
-            <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
-              <td style={{ ...td, fontFamily: fontMono }}>{o.id}{o.soNumber && <div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div>}</td>
-              <td style={{ ...td, fontFamily: fontMono, fontSize: 11.5, color: C.sub, whiteSpace: 'nowrap' }}>
-                {o.date || '—'}
-                {o.updatedAt && o.updatedAt !== o.date && (
-                  <div style={{ color: C.wood, marginTop: 2 }}>{t('lastEditedLabel')}<br />{o.updatedAt}</div>
-                )}
-              </td>
-              <td style={td}>{o.customer}</td>
-              {showAgent && <td style={td}>{o.agent}</td>}
-              <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{o.poscode}</td>
-              <td style={{ ...td, fontSize: 12, color: C.sub }}>{o.items.map(it => it.code).join(', ')}</td>
-              <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.total)}</td>
-              <td style={td}><StampBadge status={o.status} /></td>
-              <td style={td}>
-                {o.soFileUrl ? (
-                  <a href={o.soFileUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.wood, fontWeight: 600, fontSize: 12.5, textDecoration: 'none' }}>
-                    <FileText size={14} /> {o.soFileName || 'SO.pdf'}
-                  </a>
-                ) : o.status === 'so_rejected' ? (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, color: C.brick, fontSize: 12 }}>
-                    <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                    <span>{o.rejectReason || t('unnamedReason')}</span>
-                  </div>
-                ) : <span style={{ color: C.sub, fontSize: 12 }}>—</span>}
-              </td>
-              {actions && <td style={td}>{actions(o)}</td>}
+    <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+      <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 320 }}>
+        <Search size={14} color={C.sub} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)' }} />
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder={t('searchOrderPlaceholder')}
+          style={{ ...inputStyle, paddingLeft: 32 }}
+        />
+      </div>
+      <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', flex: '0 1 180px' }}>
+        {statusOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function OrderTable({ orders, claims, showAgent = true, actions, searchable = true }) {
+  const { t } = useLang();
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const filtered = filterOrdersBySearch(orders, query, statusFilter, claims);
+
+  return (
+    <div>
+      {searchable && (
+        <OrderSearchBar query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} showClaimFilter={!!claims} />
+      )}
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: C.woodTint }}>
+              <th style={th}>{t('orderIdCol')}</th>
+              <th style={th}>{t('orderDateTimeCol')}</th>
+              <th style={th}>{t('customerCol')}</th>
+              {showAgent && <th style={th}>{t('agentCol')}</th>}
+              <th style={th}>POS Code</th>
+              <th style={th}>{t('itemsCol')}</th>
+              <th style={th}>{t('amountCol')}</th>
+              <th style={th}>{t('statusCol')}</th>
+              <th style={th}>{t('soFileCol')}</th>
+              {actions && <th style={th}></th>}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && (
+              <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>
+            )}
+            {filtered.map(o => (
+              <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td style={{ ...td, fontFamily: fontMono }}>{o.id}{o.soNumber && <div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div>}</td>
+                <td style={{ ...td, fontFamily: fontMono, fontSize: 11.5, color: C.sub, whiteSpace: 'nowrap' }}>
+                  {o.date || '—'}
+                  {o.updatedAt && o.updatedAt !== o.date && (
+                    <div style={{ color: C.wood, marginTop: 2 }}>{t('lastEditedLabel')}<br />{o.updatedAt}</div>
+                  )}
+                </td>
+                <td style={td}>{o.customer}</td>
+                {showAgent && <td style={td}>{o.agent}</td>}
+                <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{o.poscode}</td>
+                <td style={{ ...td, fontSize: 12, color: C.sub }}>{o.items.map(it => it.code).join(', ')}</td>
+                <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.total)}</td>
+                <td style={td}><StampBadge status={o.status} /></td>
+                <td style={td}>
+                  {o.soFileUrl ? (
+                    <a href={o.soFileUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.wood, fontWeight: 600, fontSize: 12.5, textDecoration: 'none' }}>
+                      <FileText size={14} /> {o.soFileName || 'SO.pdf'}
+                    </a>
+                  ) : o.status === 'so_rejected' ? (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, color: C.brick, fontSize: 12 }}>
+                      <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>{o.rejectReason || t('unnamedReason')}</span>
+                    </div>
+                  ) : <span style={{ color: C.sub, fontSize: 12 }}>—</span>}
+                </td>
+                {actions && <td style={td}>{actions(o)}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 const th = { textAlign: 'left', padding: '10px 14px', fontSize: 11.5, letterSpacing: '0.04em', color: C.wood, fontWeight: 700, textTransform: 'uppercase' };
 const td = { padding: '11px 14px', color: C.ink, verticalAlign: 'top' };
 
-function SalesHistory({ orders, showAgent = false }) {
+function SalesHistory({ orders, claims, showAgent = false }) {
   const { t, lang } = useLang();
   const [selectedMonth, setSelectedMonth] = useState(null);
   const soOrders = orders.filter(o => o.status === 'so_opened');
@@ -1070,7 +1132,7 @@ function SalesHistory({ orders, showAgent = false }) {
           {active && (
             <>
               <SectionTitle title={`${formatMonthLabel(active, lang)} · ${t('totalSalesLabel')} ${RM(monthTotal(active))}`} />
-              <OrderTable orders={monthOrders(active)} showAgent={showAgent} />
+              <OrderTable orders={monthOrders(active)} claims={claims} showAgent={showAgent} />
             </>
           )}
         </>
@@ -1785,6 +1847,11 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
   const opened = orders.filter(o => o.status === 'so_opened');
   const rejectedOrders = orders.filter(o => o.status === 'so_rejected');
   const pendingLogistics = orders.filter(o => o.deliveryUrgent && o.logisticStatus === 'pending').length;
+  const [orderQuery, setOrderQuery] = useState('');
+  const matchesQuery = o => !orderQuery.trim() || o.id.toLowerCase().includes(orderQuery.trim().toLowerCase());
+  const pendingFiltered = pending.filter(matchesQuery);
+  const openedFiltered = opened.filter(matchesQuery);
+  const rejectedFiltered = rejectedOrders.filter(matchesQuery);
 
   const startOpen = (o) => {
     setOpeningId(o.id);
@@ -1827,6 +1894,10 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
 
       {tab === 'orders' && (
         <>
+      <div style={{ position: 'relative', maxWidth: 320, marginBottom: 16 }}>
+        <Search size={14} color={C.sub} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)' }} />
+        <input value={orderQuery} onChange={e => setOrderQuery(e.target.value)} placeholder={t('searchOrderPlaceholder')} style={{ ...inputStyle, paddingLeft: 32 }} />
+      </div>
       <div style={{ display: 'flex', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
         <StatCard label={t('statPendingSo')} value={pending.length} color={C.ochre} icon={Clock} />
         <StatCard label={t('statSoThisMonth')} value={opened.length} color={C.teal} icon={FileCheck2} />
@@ -1838,9 +1909,9 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
             <th style={th}>{t('orderIdCol')}</th><th style={th}>{t('customerCol')}</th><th style={th}>{t('agentCol')}</th><th style={th}>POS Code</th><th style={th}>{t('amountCol')}</th><th style={th}></th>
           </tr></thead>
           <tbody>
-            {pending.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>
+            {pendingFiltered.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>
               <Inbox size={20} style={{ marginBottom: 6 }} /><div>{t('noPendingSo')}</div></td></tr>}
-            {pending.map(o => (
+            {pendingFiltered.map(o => (
               <React.Fragment key={o.id}>
                 <tr style={{ borderTop: `1px solid ${C.line}` }}>
                   <td style={{ ...td, fontFamily: fontMono }}>{o.id}{o.previousSoNumber && <div style={{ fontSize: 10, color: C.wood, display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}><RefreshCw size={10} /> {t('changeModelTag')}</div>}</td>
@@ -1917,8 +1988,8 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
             <th style={th}>{t('orderIdCol')}</th><th style={th}>{t('customerCol')}</th><th style={th}>{t('agentCol')}</th><th style={th}>{t('amountCol')}</th><th style={th}>{t('soFileCol')}</th><th style={th}></th>
           </tr></thead>
           <tbody>
-            {opened.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>}
-            {opened.map(o => (
+            {openedFiltered.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>}
+            {openedFiltered.map(o => (
               <React.Fragment key={o.id}>
                 <tr style={{ borderTop: `1px solid ${C.line}` }}>
                   <td style={{ ...td, fontFamily: fontMono }}>{o.id}<div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div></td>
@@ -1956,7 +2027,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                 <th style={th}>{t('orderIdCol')}</th><th style={th}>{t('customerCol')}</th><th style={th}>{t('agentCol')}</th><th style={th}>{t('rejectReasonCol')}</th><th style={th}></th>
               </tr></thead>
               <tbody>
-                {rejectedOrders.map(o => (
+                {rejectedFiltered.map(o => (
                   <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
                     <td style={{ ...td, fontFamily: fontMono }}>{o.id}</td>
                     <td style={td}>{o.customer}</td>
@@ -2218,7 +2289,7 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
     <div>
       <SectionTitle eyebrow={t('financeEyebrow')} title={t('financeConsoleTitle')} right={
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {[['commission', t('tabCommission')], ['sales', t('tabTeamSales')], ['items', t('tabItemsManage')], ['accounts', t('tabAccounts')]].map(([id, l]) => (
+          {[['commission', t('tabCommission')], ['orders', t('tabOrders')], ['sales', t('tabTeamSales')], ['items', t('tabItemsManage')], ['accounts', t('tabAccounts')]].map(([id, l]) => (
             <button key={id} onClick={() => setTab(id)} style={{
               padding: '7px 14px', borderRadius: 7, border: `1px solid ${tab === id ? C.wood : C.line}`,
               background: tab === id ? C.wood : '#fff', color: tab === id ? '#fff' : C.ink, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: fontBody,
@@ -2228,6 +2299,8 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
       } />
 
       {tab === 'accounts' && <AccountsManager accounts={accounts} setAccounts={setAccounts} />}
+
+      {tab === 'orders' && <OrderTable orders={orders} claims={claims} />}
 
       {tab === 'commission' && (
         <div>
@@ -2506,10 +2579,10 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
       ) : (
         <Shell user={user} view={view} setView={setView} navItems={navMap[user.role]} onLogout={() => { supabase.auth.signOut(); setUser(null); }} accounts={accounts} setAccounts={setAccounts}>
           {user.role === 'salesman' && view === 'home' && <SalesmanDashboard user={user} orders={orders} items={items} claims={claims} setOrders={setOrders} setClaims={setClaims} accounts={accounts} />}
-          {user.role === 'salesman' && view === 'history' && <SalesHistory orders={orders.filter(o => o.agent === user.name)} />}
+          {user.role === 'salesman' && view === 'history' && <SalesHistory orders={orders.filter(o => o.agent === user.name)} claims={claims.filter(c => c.agent === user.name)} />}
           {user.role === 'leader' && view === 'home' && <LeaderDashboard user={user} orders={orders} claims={claims} accounts={accounts} />}
-          {user.role === 'leader' && view === 'history' && <SalesHistory orders={orders.filter(o => o.team === user.team)} showAgent />}
-          {user.role === 'admin' && <AdminDashboard orders={orders} setOrders={setOrders} items={items} setItems={setItems} />}
+          {user.role === 'leader' && view === 'history' && <SalesHistory orders={orders.filter(o => o.team === user.team)} claims={claims.filter(c => c.team === user.team)} showAgent />}
+          {user.role === 'admin' && <AdminDashboard orders={orders} setOrders={setOrders} items={items} setItems={setItems} claims={claims} />}
           {user.role === 'finance' && <FinanceDashboard orders={orders} claims={claims} setClaims={setClaims} items={items} setItems={setItems} accounts={accounts} setAccounts={setAccounts} />}
         </Shell>
       )}
