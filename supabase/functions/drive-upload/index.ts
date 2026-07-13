@@ -1,5 +1,8 @@
 // drive-upload
 // 把销售员上传的水单/订金水单/物流证明，真的传到对应的 Google Drive 资料夹
+// 用「OAuth 使用者授权」而不是 Service Account —— 因为 Service Account 本身没有储存空间，
+// 一般 Gmail/Google 帐号的资料夹又不能用共享云端硬盘，所以改用真人帐号的授权来上传，
+// 文件会算在那个 Google 帐号自己的容量里。
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,56 +15,19 @@ const FOLDER_IDS = {
   logistics_proof: '1fAMFAx_c5YDnt2giNwFHhGnUa66wHua7',
 };
 
-function base64url(bytes) {
-  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-function base64urlFromString(str) {
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function getAccessToken(serviceAccount) {
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const now = Math.floor(Date.now() / 1000);
-  const claim = {
-    iss: serviceAccount.client_email,
-    scope: 'https://www.googleapis.com/auth/drive',
-    aud: serviceAccount.token_uri,
-    exp: now + 3600,
-    iat: now,
-  };
-  const encHeader = base64urlFromString(JSON.stringify(header));
-  const encClaim = base64urlFromString(JSON.stringify(claim));
-  const signInput = `${encHeader}.${encClaim}`;
-
-  const pemContents = serviceAccount.private_key
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replace(/\s/g, '');
-  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8', binaryDer.buffer,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false, ['sign'],
-  );
-
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(signInput),
-  );
-
-  const jwt = `${signInput}.${base64url(signature)}`;
-
-  const resp = await fetch(serviceAccount.token_uri, {
+async function getAccessToken() {
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
+      client_id: Deno.env.get('GOOGLE_OAUTH_CLIENT_ID'),
+      client_secret: Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET'),
+      refresh_token: Deno.env.get('GOOGLE_OAUTH_REFRESH_TOKEN'),
+      grant_type: 'refresh_token',
     }),
   });
   const data = await resp.json();
-  if (!resp.ok) throw new Error(data.error_description || data.error || 'Google token 交换失败');
+  if (!resp.ok) throw new Error(data.error_description || data.error || 'Google token 刷新失败');
   return data.access_token;
 }
 
@@ -78,8 +44,7 @@ Deno.serve(async (req) => {
     if (!folderId) return new Response(JSON.stringify({ error: '未知的 docType' }), { status: 400, headers: corsHeaders });
     if (!file) return new Response(JSON.stringify({ error: '没有收到文件' }), { status: 400, headers: corsHeaders });
 
-    const serviceAccount = JSON.parse(Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON'));
-    const accessToken = await getAccessToken(serviceAccount);
+    const accessToken = await getAccessToken();
 
     const metadata = { name: fileName, parents: [folderId] };
     const fileBuffer = await file.arrayBuffer();

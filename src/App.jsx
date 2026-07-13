@@ -1536,21 +1536,6 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
                 }} />
               </label>
             </Field>
-            {slipFile && (
-              <div style={{ background: C.tealTint, border: `1px solid ${C.teal}`, borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: C.teal, marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <ShieldCheck size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-                <div>{t('slipVerifiedPrefix')} <b>EE LIFE DESIGN SDN. BHD.</b>{t('slipVerifiedSuffix')}<br /><span style={{ color: C.sub }}>{t('slipVerifiedSub')}</span></div>
-              </div>
-            )}
-            {slipFile && (
-              <div style={{ background: C.woodTint, border: `1px solid ${C.wood}`, borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: C.wood, marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <FolderOpen size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-                <div>
-                  {t('driveSyncedPrefix')} <a href={GOOGLE_DRIVE_FOLDER_URL} target="_blank" rel="noreferrer" style={{ color: C.wood, fontWeight: 700, textDecoration: 'underline' }}>{driveFolderName()}</a>{t('driveSyncedMiddle')} <span style={{ fontFamily: fontMono, fontWeight: 700 }}>{driveFileName}</span>{t('driveSyncedSuffix2')}
-                  <br /><span style={{ color: C.sub }}>{t('driveSyncedSub')}</span>
-                </div>
-              </div>
-            )}
           </div>
         )}
         {step === 4 && order && (
