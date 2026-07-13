@@ -1036,6 +1036,7 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
   const { t } = useLang();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [expandedId, setExpandedId] = useState(null);
   const filtered = filterOrdersBySearch(orders, query, statusFilter, claims);
 
   return (
@@ -1064,8 +1065,14 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
               <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>
             )}
             {filtered.map(o => (
-              <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                <td style={{ ...td, fontFamily: fontMono }}>{o.id}{o.soNumber && <div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div>}</td>
+              <React.Fragment key={o.id}>
+              <tr style={{ borderTop: `1px solid ${C.line}` }}>
+                <td style={{ ...td, fontFamily: fontMono }}>
+                  <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: C.wood, fontFamily: fontMono, fontSize: 13, fontWeight: 700, textDecoration: 'underline', textAlign: 'left' }}>
+                    {o.id}
+                  </button>
+                  {o.soNumber && <div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div>}
+                </td>
                 <td style={{ ...td, fontFamily: fontMono, fontSize: 11.5, color: C.sub, whiteSpace: 'nowrap' }}>
                   {o.date || '—'}
                   {o.updatedAt && o.updatedAt !== o.date && (
@@ -1092,6 +1099,14 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
                 </td>
                 {actions && <td style={td}>{actions(o)}</td>}
               </tr>
+              {expandedId === o.id && (
+                <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
+                  <td colSpan={10} style={{ padding: 18 }}>
+                    <AdminOrderDetail order={o} />
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -1826,7 +1841,7 @@ function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic }) {
           <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
             <StampBadge status={order.logisticStatus === 'approved' ? 'verified' : order.logisticStatus === 'rejected' ? 'rejected' : 'pending'} />
           </div>
-          {order.logisticStatus === 'pending' && (
+          {order.logisticStatus === 'pending' && onApproveLogistic && onRejectLogistic && (
             <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
               <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={onApproveLogistic}>{t('approve')}</Btn>
               <Btn size="sm" variant="brick" icon={XCircle} onClick={onRejectLogistic}>{t('reject')}</Btn>
