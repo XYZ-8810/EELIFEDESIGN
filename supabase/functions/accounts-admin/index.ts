@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
       });
       if (profileError) return new Response(JSON.stringify({ error: profileError.message }), { status: 400, headers: corsHeaders });
 
-      return new Response(JSON.stringify({ id: userData.user.id, role, name, team }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ id: userData.user.id, role, name, team, email }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (action === 'resetPassword') {

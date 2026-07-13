@@ -2227,6 +2227,19 @@ function ItemEditor({ item, existingItems = [], onSave, onCancel }) {
   const { t } = useLang();
   const [d, setD] = useState({ addOns: [], image: null, ...item });
   const [error, setError] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const handleImageUpload = async (file) => {
+    if (!file) return;
+    setUploadingImage(true);
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
+    const path = `${Date.now()}_${Math.floor(Math.random() * 9999)}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from('item-images').upload(path, file);
+    setUploadingImage(false);
+    if (uploadError) { setError(uploadError.message); return; }
+    const { data: pub } = supabase.storage.from('item-images').getPublicUrl(path);
+    setD(prev => ({ ...prev, image: pub.publicUrl }));
+  };
 
   const addAddOn = () => setD({ ...d, addOns: [...d.addOns, { code: `AO-${Math.floor(Math.random() * 900 + 100)}`, name: '', price: 0, stock: 0 }] });
   const updateAddOn = (i, patch) => setD({ ...d, addOns: d.addOns.map((a, idx) => idx === i ? { ...a, ...patch } : a) });
@@ -2248,11 +2261,14 @@ function ItemEditor({ item, existingItems = [], onSave, onCancel }) {
 
   return (
     <div style={{ background: C.woodTint, border: `1px solid ${C.wood}`, borderRadius: 8, padding: 14, marginBottom: 12 }}>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontFamily: fontBody, fontSize: 12, color: C.sub, marginBottom: 6, fontWeight: 600 }}>{t('productImage')}</div>
-          <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, width: 96, height: 96, border: `1.5px dashed ${C.wood}`, borderRadius: 8, cursor: 'pointer', background: '#fff', overflow: 'hidden' }}>
-            {d.image ? (
+          <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, width: 96, height: 96, border: `1.5px dashed ${C.wood}`, borderRadius: 8, cursor: uploadingImage ? 'default' : 'pointer', background: '#fff', overflow: 'hidden' }}>
+            {uploadingImage ? (
+              <Loader2 size={20} color={C.wood} style={{ animation: 'spin 1s linear infinite' }} />
+            ) : d.image ? (
               <img src={d.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
               <>
@@ -2260,7 +2276,7 @@ function ItemEditor({ item, existingItems = [], onSave, onCancel }) {
                 <span style={{ fontSize: 10.5, color: C.sub }}>{t('uploadImage')}</span>
               </>
             )}
-            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (f) setD({ ...d, image: URL.createObjectURL(f) }); }} />
+            <input type="file" accept="image/*" disabled={uploadingImage} style={{ display: 'none' }} onChange={e => handleImageUpload(e.target.files[0])} />
           </label>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10, flex: 1, minWidth: 260 }}>
@@ -2316,7 +2332,7 @@ function ItemEditor({ item, existingItems = [], onSave, onCancel }) {
       <Btn size="sm" variant="outline" icon={Plus} onClick={addAddOn}>{t('addNewAddOn')}</Btn>
 
       <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
-        <Btn size="sm" icon={CheckCircle2} onClick={handleSave}>{t('save')}</Btn>
+        <Btn size="sm" icon={CheckCircle2} onClick={handleSave} disabled={uploadingImage}>{t('save')}</Btn>
         <Btn size="sm" variant="ghost" onClick={onCancel}>{t('cancel')}</Btn>
       </div>
     </div>
