@@ -351,6 +351,8 @@ const STRINGS = {
   noHistoryYet: { zh: '还没有以往月份的记录', en: 'No past months yet' },
   totalSalesLabel: { zh: '总业绩', en: 'Total Sales' },
   currentMonthNote: { zh: '（本月资料显示在仪表板，这里只看以往月份）', en: '(This month\u2019s data is on the dashboard; this only shows past months.)' },
+  orderDateTimeCol: { zh: '提交时间', en: 'Submitted At' },
+  lastEditedLabel: { zh: '最后编辑：', en: 'Last edited:' },
   ordersCountPrefix: { zh: '共', en: 'Total' },
   ordersCountSuffix: { zh: '笔订单', en: 'orders' },
   viewWord: { zh: '查看', en: 'View' },
@@ -468,6 +470,11 @@ const formatMonthLabel = (m, lang) => {
   const d = new Date(y, mo - 1, 1);
   return d.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'long' });
 };
+const nowDateTime = () => {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
 const PAYMENT_METHODS = [
   { code: 'bank', key: 'payMethodBank' },
   { code: 'cash', key: 'payMethodCash' },
@@ -507,7 +514,7 @@ function orderRowToApp(r) {
     previousSoNumber: r.previous_so_number, deliveryUrgent: r.delivery_urgent, logisticFile: r.logistic_file,
     logisticFileUrl: r.logistic_file_url, logisticFileType: r.logistic_file_type, logisticStatus: r.logistic_status,
     depositAmount: r.deposit_amount != null ? Number(r.deposit_amount) : null, depositSlip: r.deposit_slip,
-    depositSlipUrl: r.deposit_slip_url, depositSlipType: r.deposit_slip_type, remark: r.remark, date: r.order_date,
+    depositSlipUrl: r.deposit_slip_url, depositSlipType: r.deposit_slip_type, remark: r.remark, date: r.order_date, updatedAt: r.updated_at,
   };
 }
 function orderAppToRow(o) {
@@ -519,7 +526,7 @@ function orderAppToRow(o) {
     previous_so_number: o.previousSoNumber || null, delivery_urgent: !!o.deliveryUrgent, logistic_file: o.logisticFile || null,
     logistic_file_url: o.logisticFileUrl || null, logistic_file_type: o.logisticFileType || null, logistic_status: o.logisticStatus || null,
     deposit_amount: o.depositAmount != null ? o.depositAmount : null, deposit_slip: o.depositSlip || null,
-    deposit_slip_url: o.depositSlipUrl || null, deposit_slip_type: o.depositSlipType || null, remark: o.remark || null, order_date: o.date || null,
+    deposit_slip_url: o.depositSlipUrl || null, deposit_slip_type: o.depositSlipType || null, remark: o.remark || null, order_date: o.date || null, updated_at: o.updatedAt || null,
   };
 }
 
@@ -976,6 +983,7 @@ function OrderTable({ orders, showAgent = true, actions }) {
         <thead>
           <tr style={{ background: C.woodTint }}>
             <th style={th}>{t('orderIdCol')}</th>
+            <th style={th}>{t('orderDateTimeCol')}</th>
             <th style={th}>{t('customerCol')}</th>
             {showAgent && <th style={th}>{t('agentCol')}</th>}
             <th style={th}>POS Code</th>
@@ -988,11 +996,17 @@ function OrderTable({ orders, showAgent = true, actions }) {
         </thead>
         <tbody>
           {orders.length === 0 && (
-            <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>
+            <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>
           )}
           {orders.map(o => (
             <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
               <td style={{ ...td, fontFamily: fontMono }}>{o.id}{o.soNumber && <div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div>}</td>
+              <td style={{ ...td, fontFamily: fontMono, fontSize: 11.5, color: C.sub, whiteSpace: 'nowrap' }}>
+                {o.date || '—'}
+                {o.updatedAt && o.updatedAt !== o.date && (
+                  <div style={{ color: C.wood, marginTop: 2 }}>{t('lastEditedLabel')}<br />{o.updatedAt}</div>
+                )}
+              </td>
               <td style={td}>{o.customer}</td>
               {showAgent && <td style={td}>{o.agent}</td>}
               <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{o.poscode}</td>
@@ -1352,7 +1366,8 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
       depositSlipUrl: hasDeposit ? depositSlipUrl : null,
       depositSlipType: hasDeposit ? depositSlipType : '',
       previousSoNumber: editOrder && editOrder.soNumber ? editOrder.soNumber : (editOrder?.previousSoNumber || null),
-      date: editOrder ? editOrder.date : new Date().toISOString().slice(0, 10),
+      date: editOrder ? editOrder.date : nowDateTime(),
+      updatedAt: nowDateTime(),
     });
   };
 
