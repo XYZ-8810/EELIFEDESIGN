@@ -339,6 +339,13 @@ const STRINGS = {
   subtotalLabel: { zh: '小计', en: 'Subtotal' },
   depositUploadPlaceholder: { zh: '点击上传（图片/PDF）', en: 'Click to upload (image/PDF)' },
   salesmenCountSuffix: { zh: '位销售员', en: 'salesmen' },
+  soIssuedSalesLabel: { zh: '已开SO的销售', en: 'SO Issued Sales' },
+  incompleteSalesLabel: { zh: '待申请佣金', en: 'Pending Claim' },
+  completedSalesLabel: { zh: '已申请佣金', en: 'Claim Submitted' },
+  incompleteSalesTitle: { zh: '待申请佣金（尚未提交）', en: 'Pending Commission Claim' },
+  completedSalesTitle: { zh: '已申请佣金（已提交）', en: 'Commission Claim Submitted' },
+  noIncompleteSales: { zh: '目前没有待申请佣金的订单', en: 'No orders pending a commission claim' },
+  noCompletedSales: { zh: '目前还没有已申请佣金的订单', en: 'No commission claims submitted yet' },
   ordersCountPrefix: { zh: '共', en: 'Total' },
   ordersCountSuffix: { zh: '笔订单', en: 'orders' },
   viewWord: { zh: '查看', en: 'View' },
@@ -1003,7 +1010,7 @@ const th = { textAlign: 'left', padding: '10px 14px', fontSize: 11.5, letterSpac
 const td = { padding: '11px 14px', color: C.ink, verticalAlign: 'top' };
 
 /* ============================== Salesman ============================== */
-function SalesmanDashboard({ user, orders, items, setOrders, setClaims, accounts }) {
+function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, accounts }) {
   const { t } = useLang();
   const { teams } = useTeamsCtx();
   const [view, setView] = useState('home');
@@ -1013,6 +1020,12 @@ function SalesmanDashboard({ user, orders, items, setOrders, setClaims, accounts
   const teamOrders = orders.filter(o => o.team === user.team);
   const teamTotal = teamOrders.filter(o => o.status === 'so_opened').reduce((s, o) => s + o.total, 0);
   const teamMemberCount = accounts.filter(a => a.role === 'salesman' && a.team === user.team).length;
+
+  const mySoOrders = myOrders.filter(o => o.status === 'so_opened');
+  const myClaims = claims.filter(c => c.agent === user.name);
+  const claimedOrderIds = new Set(myClaims.map(c => c.orderId));
+  const incompleteSales = mySoOrders.filter(o => !claimedOrderIds.has(o.id));
+  const completedSales = mySoOrders.filter(o => claimedOrderIds.has(o.id));
 
   if (view === 'newOrder') return <OrderForm user={user} items={items} accounts={accounts} onCancel={() => setView('home')} onSubmit={o => { setOrders(prev => [o, ...prev]); setView('home'); }} />;
   if (view === 'editOrder' && editingOrder) return (
@@ -1037,8 +1050,30 @@ function SalesmanDashboard({ user, orders, items, setOrders, setClaims, accounts
         <StatCard label={t('statMyOrders')} value={myOrders.length} sub={`${myOrders.filter(o => o.status === 'pending_so').length} ${t('statPendingSoCount')}`} icon={ClipboardList} />
         <StatCard label={t('statMyClaims')} value={t('viewWord')} sub={t('clickToStart')} color={C.teal} icon={Receipt} />
       </div>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
+        <StatCard label={t('soIssuedSalesLabel')} value={mySoOrders.length} sub={RM(mySoOrders.reduce((s, o) => s + o.total, 0))} icon={FileCheck2} />
+        <StatCard label={t('incompleteSalesLabel')} value={incompleteSales.length} sub={RM(incompleteSales.reduce((s, o) => s + o.total, 0))} color={C.ochre} icon={Clock} />
+        <StatCard label={t('completedSalesLabel')} value={completedSales.length} sub={RM(completedSales.reduce((s, o) => s + o.total, 0))} color={C.teal} icon={CheckCircle2} />
+      </div>
       <SectionTitle eyebrow="Team Result" title={t('teamResultTitle')} />
       <div style={{ marginBottom: 24 }}><TeamChart team={team} orders={orders} accounts={accounts} /></div>
+
+      <SectionTitle eyebrow="SO Issued" title={t('incompleteSalesTitle')} right={
+        <Btn size="sm" variant="outline" icon={Receipt} onClick={() => setView('claim')}>{t('claimWizardTitle')}</Btn>
+      } />
+      <div style={{ marginBottom: 24 }}>
+        {incompleteSales.length === 0 ? (
+          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noIncompleteSales')}</div>
+        ) : <OrderTable orders={incompleteSales} showAgent={false} />}
+      </div>
+
+      <SectionTitle eyebrow="SO Issued" title={t('completedSalesTitle')} />
+      <div style={{ marginBottom: 24 }}>
+        {completedSales.length === 0 ? (
+          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noCompletedSales')}</div>
+        ) : <OrderTable orders={completedSales} showAgent={false} />}
+      </div>
+
       <SectionTitle eyebrow="My Orders" title={t('myOrdersTitle')} />
       <OrderTable orders={myOrders} showAgent={false} actions={o => {
         if (o.status === 'so_rejected') return <Btn size="sm" variant="outline" icon={Edit3} onClick={() => { setEditingOrder(o); setView('editOrder'); }}>{t('editResubmit')}</Btn>;
@@ -2397,7 +2432,7 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
         <LoginScreen accounts={accounts} onLogin={(u) => { setUser(u); setView('home'); }} />
       ) : (
         <Shell user={user} view={view} setView={setView} navItems={navMap[user.role]} onLogout={() => { supabase.auth.signOut(); setUser(null); }} accounts={accounts} setAccounts={setAccounts}>
-          {user.role === 'salesman' && <SalesmanDashboard user={user} orders={orders} items={items} setOrders={setOrders} setClaims={setClaims} accounts={accounts} />}
+          {user.role === 'salesman' && <SalesmanDashboard user={user} orders={orders} items={items} claims={claims} setOrders={setOrders} setClaims={setClaims} accounts={accounts} />}
           {user.role === 'leader' && <LeaderDashboard user={user} orders={orders} claims={claims} accounts={accounts} />}
           {user.role === 'admin' && <AdminDashboard orders={orders} setOrders={setOrders} items={items} setItems={setItems} />}
           {user.role === 'finance' && <FinanceDashboard orders={orders} claims={claims} setClaims={setClaims} items={items} setItems={setItems} accounts={accounts} setAccounts={setAccounts} />}
