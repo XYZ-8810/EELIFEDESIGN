@@ -13,6 +13,7 @@ const FOLDER_IDS = {
   bank_slip: '1KQuqyD0kp4NzfXpny70B_uVQ4edVAthU',
   deposit_slip: '1kEzNxUhPu_AtiCdqexX205xHzdt0VPU9',
   logistics_proof: '1fAMFAx_c5YDnt2giNwFHhGnUa66wHua7',
+  so_pdf: '1FmDdxVUr8WFGfGqLQyPN91xzaGFwbwEy',
 };
 
 async function getAccessToken() {

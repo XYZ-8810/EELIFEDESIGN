@@ -1859,6 +1859,8 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
   const [openingId, setOpeningId] = useState(null);
   const [soNumber, setSoNumber] = useState('');
   const [soFile, setSoFile] = useState(null);
+  const [uploadingSo, setUploadingSo] = useState(false);
+  const [soUploadError, setSoUploadError] = useState('');
   const [detailId, setDetailId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -1878,11 +1880,18 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
     setSoFile(null);
   };
 
-  const confirmOpen = (id) => {
+  const confirmOpen = async (id) => {
     if (!soNumber.trim() || !soFile) return;
-    const soFileUrl = URL.createObjectURL(soFile);
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'so_opened', soNumber, soFileUrl, soFileName: soFile.name } : o));
-    setOpeningId(null); setSoNumber(''); setSoFile(null);
+    setUploadingSo(true);
+    setSoUploadError('');
+    try {
+      const soFileUrl = await uploadToDrive(soFile, 'so_pdf');
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'so_opened', soNumber, soFileUrl, soFileName: soFile.name } : o));
+      setOpeningId(null); setSoNumber(''); setSoFile(null);
+    } catch (err) {
+      setSoUploadError(err.message);
+    }
+    setUploadingSo(false);
   };
 
   const startReject = (o) => { setRejectingId(o.id); setRejectReason(''); };
@@ -1986,11 +1995,12 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                           </label>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <Btn size="sm" icon={Stamp} disabled={!soNumber.trim() || !soFile} onClick={() => confirmOpen(o.id)}>{t('confirmOpenSo')}</Btn>
-                          <Btn size="sm" variant="ghost" onClick={() => setOpeningId(null)}>{t('cancel')}</Btn>
+                          <Btn size="sm" icon={Stamp} disabled={!soNumber.trim() || !soFile || uploadingSo} onClick={() => confirmOpen(o.id)}>{uploadingSo ? '…' : t('confirmOpenSo')}</Btn>
+                          <Btn size="sm" variant="ghost" onClick={() => { setOpeningId(null); setSoUploadError(''); }} disabled={uploadingSo}>{t('cancel')}</Btn>
                         </div>
                       </div>
                       {!soFile && <div style={{ fontSize: 11.5, color: C.brick, marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {t('soPdfRequiredNote')}</div>}
+                      {soUploadError && <div style={{ fontSize: 11.5, color: C.brick, marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {soUploadError}</div>}
                     </td>
                   </tr>
                 )}
