@@ -354,6 +354,21 @@ const STRINGS = {
   orderDateTimeCol: { zh: '提交时间', en: 'Submitted At' },
   lastEditedLabel: { zh: '最后编辑：', en: 'Last edited:' },
   tabOrders: { zh: '订单', en: 'Orders' },
+  stageDeliveryTitle: { zh: '物流进度', en: 'Delivery Progress' },
+  stageSoIssued: { zh: '已开SO', en: 'SO Issued' },
+  stageArranging: { zh: 'Arranging', en: 'Arranging' },
+  stageIssues: { zh: 'Issues', en: 'Issues' },
+  stageDelivered: { zh: 'Delivered', en: 'Delivered' },
+  markDelivered: { zh: '标记已送达', en: 'Mark Delivered' },
+  flagIssue: { zh: '标记异常', en: 'Flag Issue' },
+  issueRemarkPrompt: { zh: '异常原因（Salesman会看到）', en: 'Issue reason (visible to salesman)' },
+  issueRemarkPlaceholder: { zh: '例：联系不到客户，请再跟进', en: 'e.g. Cannot reach the customer, please follow up' },
+  confirmFlagIssue: { zh: '确认标记异常', en: 'Confirm Flag Issue' },
+  issueWarningTitle: { zh: '此订单有异常，需要跟进', en: 'This order has an issue \u2014 follow-up needed' },
+  issueResolvedNote: { zh: '异常已处理', en: 'Issue resolved' },
+  uploadIssueProof: { zh: '上传处理证据（WhatsApp截图或PDF）', en: 'Upload proof (WhatsApp screenshot or PDF)' },
+  issueProofUploaded: { zh: '证据已上传，异常已标记为处理完成', en: 'Proof uploaded, issue marked as resolved' },
+  viewIssueProof: { zh: '查看证据', en: 'View Proof' },
   searchOrderPlaceholder: { zh: '搜索订单编号或SO编号…', en: 'Search order ID or SO ID…' },
   filterStatusAll: { zh: '全部状态', en: 'All Status' },
   filterStatusSoOpened: { zh: '已开SO', en: 'SO Issued' },
@@ -526,6 +541,8 @@ function orderRowToApp(r) {
     logisticFileUrl: r.logistic_file_url, logisticFileType: r.logistic_file_type, logisticStatus: r.logistic_status,
     depositAmount: r.deposit_amount != null ? Number(r.deposit_amount) : null, depositSlip: r.deposit_slip,
     depositSlipUrl: r.deposit_slip_url, depositSlipType: r.deposit_slip_type, remark: r.remark, date: r.order_date, updatedAt: r.updated_at,
+    deliveryStage: r.delivery_stage, hasIssue: r.has_issue, issueRemark: r.issue_remark, issueResolved: r.issue_resolved,
+    issueProofFile: r.issue_proof_file, issueProofUrl: r.issue_proof_url, issueProofType: r.issue_proof_type,
   };
 }
 function orderAppToRow(o) {
@@ -538,6 +555,8 @@ function orderAppToRow(o) {
     logistic_file_url: o.logisticFileUrl || null, logistic_file_type: o.logisticFileType || null, logistic_status: o.logisticStatus || null,
     deposit_amount: o.depositAmount != null ? o.depositAmount : null, deposit_slip: o.depositSlip || null,
     deposit_slip_url: o.depositSlipUrl || null, deposit_slip_type: o.depositSlipType || null, remark: o.remark || null, order_date: o.date || null, updated_at: o.updatedAt || null,
+    delivery_stage: o.deliveryStage || null, has_issue: !!o.hasIssue, issue_remark: o.issueRemark || null, issue_resolved: !!o.issueResolved,
+    issue_proof_file: o.issueProofFile || null, issue_proof_url: o.issueProofUrl || null, issue_proof_type: o.issueProofType || null,
   };
 }
 
@@ -1032,15 +1051,29 @@ function OrderSearchBar({ query, setQuery, statusFilter, setStatusFilter, showCl
   );
 }
 
-function OrderTable({ orders, claims, showAgent = true, actions, searchable = true }) {
+function OrderTable({ orders, claims, showAgent = true, actions, searchable = true, currentUser, setOrders }) {
   const { t } = useLang();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
+  const [resolvingIssueFor, setResolvingIssueFor] = useState(null);
   const filtered = filterOrdersBySearch(orders, query, statusFilter, claims);
+
+  const resolveIssue = async (order, file) => {
+    if (!setOrders) return;
+    setResolvingIssueFor(order.id);
+    try {
+      const url = await uploadToDrive(file, 'delivery_issue_proof');
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, issueResolved: true, issueProofFile: file.name, issueProofUrl: url, issueProofType: file.type } : o));
+    } catch (err) {
+      alert(err.message);
+    }
+    setResolvingIssueFor(null);
+  };
 
   return (
     <div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       {searchable && (
         <OrderSearchBar query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} showClaimFilter={!!claims} />
       )}
@@ -1102,7 +1135,12 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
               {expandedId === o.id && (
                 <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
                   <td colSpan={10} style={{ padding: 18 }}>
-                    <AdminOrderDetail order={o} />
+                    <AdminOrderDetail
+                      order={o}
+                      canResolveIssue={!!(currentUser && currentUser.role === 'salesman' && o.agent === currentUser.name)}
+                      onResolveIssue={file => resolveIssue(o, file)}
+                      resolvingIssue={resolvingIssueFor === o.id}
+                    />
                   </td>
                 </tr>
               )}
@@ -1117,7 +1155,7 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
 const th = { textAlign: 'left', padding: '10px 14px', fontSize: 11.5, letterSpacing: '0.04em', color: C.wood, fontWeight: 700, textTransform: 'uppercase' };
 const td = { padding: '11px 14px', color: C.ink, verticalAlign: 'top' };
 
-function SalesHistory({ orders, claims, showAgent = false }) {
+function SalesHistory({ orders, claims, showAgent = false, currentUser, setOrders }) {
   const { t, lang } = useLang();
   const [selectedMonth, setSelectedMonth] = useState(null);
   const soOrders = orders.filter(o => o.status === 'so_opened');
@@ -1151,7 +1189,7 @@ function SalesHistory({ orders, claims, showAgent = false }) {
           {active && (
             <>
               <SectionTitle title={`${formatMonthLabel(active, lang)} · ${t('totalSalesLabel')} ${RM(monthTotal(active))}`} />
-              <OrderTable orders={monthOrders(active)} claims={claims} showAgent={showAgent} />
+              <OrderTable orders={monthOrders(active)} claims={claims} showAgent={showAgent} currentUser={currentUser} setOrders={setOrders} />
             </>
           )}
         </>
@@ -1216,18 +1254,18 @@ function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, 
       <div style={{ marginBottom: 24 }}>
         {incompleteSales.length === 0 ? (
           <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noIncompleteSales')}</div>
-        ) : <OrderTable orders={incompleteSales} showAgent={false} />}
+        ) : <OrderTable orders={incompleteSales} showAgent={false} currentUser={user} setOrders={setOrders} />}
       </div>
 
       <SectionTitle eyebrow="SO Issued" title={t('completedSalesTitle')} />
       <div style={{ marginBottom: 24 }}>
         {completedSales.length === 0 ? (
           <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noCompletedSales')}</div>
-        ) : <OrderTable orders={completedSales} showAgent={false} />}
+        ) : <OrderTable orders={completedSales} showAgent={false} currentUser={user} setOrders={setOrders} />}
       </div>
 
       <SectionTitle eyebrow="My Orders" title={t('myOrdersTitle')} />
-      <OrderTable orders={myOrders} claims={claims} showAgent={false} actions={o => {
+      <OrderTable orders={myOrders} claims={claims} showAgent={false} currentUser={user} setOrders={setOrders} actions={o => {
         if (o.status === 'so_rejected') return <Btn size="sm" variant="outline" icon={Edit3} onClick={() => { setEditingOrder(o); setView('editOrder'); }}>{t('editResubmit')}</Btn>;
         if (o.status === 'so_opened') return <Btn size="sm" variant="outline" icon={RefreshCw} onClick={() => { setEditingOrder(o); setView('editOrder'); }}>{t('changeModel')}</Btn>;
         return null;
@@ -1775,9 +1813,91 @@ function LeaderDashboard({ user, orders, claims, accounts }) {
 }
 
 /* ============================== Admin（开SO） ============================== */
-function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic }) {
+function DeliveryProgress({ order }) {
   const { t } = useLang();
+  if (order.status !== 'so_opened') return null;
+
+  const soIssuedDone = true; // 走到这里代表SO已开
+  const stage = order.deliveryStage || 'arranging';
+  const arrangingDone = stage === 'delivered';
+  const deliveredDone = stage === 'delivered';
+  const issueActive = order.hasIssue && !order.issueResolved;
+  const issueResolved = order.hasIssue && order.issueResolved;
+
+  const nodeColor = (done, active) => done ? C.teal : active ? '#3B82C4' : C.line;
+  const nodeTextColor = (done, active) => done ? C.teal : active ? '#3B82C4' : C.sub;
+
+  const Node = ({ label, done, active }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 70 }}>
+      <div style={{ width: 14, height: 14, borderRadius: '50%', background: nodeColor(done, active), border: `2px solid ${nodeColor(done, active)}`, marginBottom: 6 }} />
+      <div style={{ fontSize: 11, fontWeight: 600, color: nodeTextColor(done, active), textAlign: 'center' }}>{label}</div>
+    </div>
+  );
+  const Connector = ({ done }) => <div style={{ flex: '0 0 24px', height: 2, background: done ? C.teal : C.line, marginTop: 6 }} />;
+
   return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.08em', color: C.wood, textTransform: 'uppercase', marginBottom: 10 }}>{t('stageDeliveryTitle')}</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+        <Node label={t('stageSoIssued')} done={soIssuedDone} />
+        <Connector done={arrangingDone} />
+        <Node label={t('stageArranging')} done={arrangingDone} active={!arrangingDone} />
+        <Connector done={deliveredDone} />
+        <Node label={t('stageIssues')} done={issueResolved} active={issueActive} />
+        <Connector done={deliveredDone} />
+        <Node label={t('stageDelivered')} done={deliveredDone} />
+      </div>
+    </div>
+  );
+}
+
+function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onFlagIssue, canResolveIssue, onResolveIssue, resolvingIssue }) {
+  const { t } = useLang();
+  const [flaggingIssue, setFlaggingIssue] = useState(false);
+  const [issueRemarkInput, setIssueRemarkInput] = useState('');
+  return (
+    <div>
+      <DeliveryProgress order={order} />
+      {order.status === 'so_opened' && onMarkDelivered && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {order.deliveryStage !== 'delivered' && (
+            <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={onMarkDelivered}>{t('markDelivered')}</Btn>
+          )}
+          {!flaggingIssue && !(order.hasIssue && !order.issueResolved) && (
+            <Btn size="sm" variant="outline" icon={AlertTriangle} onClick={() => setFlaggingIssue(true)}>{t('flagIssue')}</Btn>
+          )}
+        </div>
+      )}
+      {flaggingIssue && (
+        <div style={{ background: C.brickTint, border: `1px solid ${C.brick}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 12.5, color: C.brick, fontWeight: 600, marginBottom: 8 }}>{t('issueRemarkPrompt')}</div>
+          <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={issueRemarkInput} onChange={e => setIssueRemarkInput(e.target.value)} placeholder={t('issueRemarkPlaceholder')} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <Btn size="sm" variant="brick" icon={AlertTriangle} disabled={!issueRemarkInput.trim()} onClick={() => { onFlagIssue(issueRemarkInput); setFlaggingIssue(false); setIssueRemarkInput(''); }}>{t('confirmFlagIssue')}</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => setFlaggingIssue(false)}>{t('cancel')}</Btn>
+          </div>
+        </div>
+      )}
+      {order.hasIssue && (
+        <div style={{ background: order.issueResolved ? C.tealTint : C.brickTint, border: `1px solid ${order.issueResolved ? C.teal : C.brick}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: order.issueResolved ? C.teal : C.brick, marginBottom: 4 }}>
+            <AlertTriangle size={14} /> {order.issueResolved ? t('issueResolvedNote') : t('issueWarningTitle')}
+          </div>
+          <div style={{ fontSize: 12.5, color: C.ink }}>{order.issueRemark}</div>
+          {order.issueProofUrl && (
+            <a href={order.issueProofUrl} target="_blank" rel="noreferrer" style={{ color: C.wood, fontSize: 12, textDecoration: 'underline', marginTop: 6, display: 'inline-block' }}>{t('viewIssueProof')}</a>
+          )}
+          {canResolveIssue && !order.issueResolved && (
+            <div style={{ marginTop: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.brick}`, borderRadius: 6, padding: '9px 12px', cursor: resolvingIssue ? 'default' : 'pointer', background: '#fff' }}>
+                <UploadCloud size={16} color={C.brick} />
+                <span style={{ fontSize: 12.5, color: C.sub }}>{resolvingIssue ? '…' : t('uploadIssueProof')}</span>
+                <input type="file" accept="image/*,application/pdf" disabled={resolvingIssue} style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (f) onResolveIssue(f); }} />
+              </label>
+            </div>
+          )}
+        </div>
+      )}
     <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
       <div style={{ flex: '2 1 320px' }}>
         <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.08em', color: C.wood, textTransform: 'uppercase', marginBottom: 8 }}>{t('orderDetailsTitle')}</div>
@@ -1850,6 +1970,7 @@ function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic }) {
         </div>
       )}
     </div>
+    </div>
   );
 }
 
@@ -1886,7 +2007,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
     setSoUploadError('');
     try {
       const soFileUrl = await uploadToDrive(soFile, 'so_pdf');
-      setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'so_opened', soNumber, soFileUrl, soFileName: soFile.name } : o));
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'so_opened', soNumber, soFileUrl, soFileName: soFile.name, deliveryStage: 'arranging' } : o));
       setOpeningId(null); setSoNumber(''); setSoFile(null);
     } catch (err) {
       setSoUploadError(err.message);
@@ -1904,6 +2025,8 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
 
   const toggleDetail = (id) => setDetailId(prev => prev === id ? null : id);
   const setLogisticStatus = (id, status) => setOrders(prev => prev.map(o => o.id === id ? { ...o, logisticStatus: status } : o));
+  const markDelivered = (id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, deliveryStage: 'delivered' } : o));
+  const flagIssue = (id, remark) => setOrders(prev => prev.map(o => o.id === id ? { ...o, hasIssue: true, issueRemark: remark, issueResolved: false, issueProofFile: null, issueProofUrl: null } : o));
 
   return (
     <div>
@@ -1962,7 +2085,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                 {detailId === o.id && (
                   <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
                     <td colSpan={6} style={{ padding: 18 }}>
-                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} />
+                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onFlagIssue={(remark) => flagIssue(o.id, remark)} />
                     </td>
                   </tr>
                 )}
@@ -2037,7 +2160,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                 {detailId === o.id && (
                   <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
                     <td colSpan={6} style={{ padding: 18 }}>
-                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} />
+                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onFlagIssue={(remark) => flagIssue(o.id, remark)} />
                     </td>
                   </tr>
                 )}
@@ -2608,7 +2731,7 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
       ) : (
         <Shell user={user} view={view} setView={setView} navItems={navMap[user.role]} onLogout={() => { supabase.auth.signOut(); setUser(null); }} accounts={accounts} setAccounts={setAccounts}>
           {user.role === 'salesman' && view === 'home' && <SalesmanDashboard user={user} orders={orders} items={items} claims={claims} setOrders={setOrders} setClaims={setClaims} accounts={accounts} />}
-          {user.role === 'salesman' && view === 'history' && <SalesHistory orders={orders.filter(o => o.agent === user.name)} claims={claims.filter(c => c.agent === user.name)} />}
+          {user.role === 'salesman' && view === 'history' && <SalesHistory orders={orders.filter(o => o.agent === user.name)} claims={claims.filter(c => c.agent === user.name)} currentUser={user} setOrders={setOrders} />}
           {user.role === 'leader' && view === 'home' && <LeaderDashboard user={user} orders={orders} claims={claims} accounts={accounts} />}
           {user.role === 'leader' && view === 'history' && <SalesHistory orders={orders.filter(o => o.team === user.team)} claims={claims.filter(c => c.team === user.team)} showAgent />}
           {user.role === 'admin' && <AdminDashboard orders={orders} setOrders={setOrders} items={items} setItems={setItems} claims={claims} />}
