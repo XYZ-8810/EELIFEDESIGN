@@ -361,6 +361,10 @@ const STRINGS = {
   stageDelivered: { zh: 'Delivered', en: 'Delivered' },
   markDelivered: { zh: '标记已送达', en: 'Mark Delivered' },
   flagIssue: { zh: '标记异常', en: 'Flag Issue' },
+  checkIssue: { zh: '检查有无异常', en: 'Check Issue' },
+  recheckIssue: { zh: '重新检查异常', en: 'Recheck Issue' },
+  hasIssueCheckbox: { zh: '此订单有异常', en: 'This order has an issue' },
+  issueRemarkRequired: { zh: '已勾选有异常，必须写明异常原因', en: 'Issue is checked \u2014 please describe the problem' },
   issueRemarkPrompt: { zh: '异常原因（Salesman会看到）', en: 'Issue reason (visible to salesman)' },
   issueRemarkPlaceholder: { zh: '例：联系不到客户，请再跟进', en: 'e.g. Cannot reach the customer, please follow up' },
   confirmFlagIssue: { zh: '确认标记异常', en: 'Confirm Flag Issue' },
@@ -541,7 +545,7 @@ function orderRowToApp(r) {
     logisticFileUrl: r.logistic_file_url, logisticFileType: r.logistic_file_type, logisticStatus: r.logistic_status,
     depositAmount: r.deposit_amount != null ? Number(r.deposit_amount) : null, depositSlip: r.deposit_slip,
     depositSlipUrl: r.deposit_slip_url, depositSlipType: r.deposit_slip_type, remark: r.remark, date: r.order_date, updatedAt: r.updated_at,
-    deliveryStage: r.delivery_stage, hasIssue: r.has_issue, issueRemark: r.issue_remark, issueResolved: r.issue_resolved,
+    deliveryStage: r.delivery_stage, hasIssue: r.has_issue, issueChecked: r.issue_checked, issueRemark: r.issue_remark, issueResolved: r.issue_resolved,
     issueProofFile: r.issue_proof_file, issueProofUrl: r.issue_proof_url, issueProofType: r.issue_proof_type,
   };
 }
@@ -555,7 +559,7 @@ function orderAppToRow(o) {
     logistic_file_url: o.logisticFileUrl || null, logistic_file_type: o.logisticFileType || null, logistic_status: o.logisticStatus || null,
     deposit_amount: o.depositAmount != null ? o.depositAmount : null, deposit_slip: o.depositSlip || null,
     deposit_slip_url: o.depositSlipUrl || null, deposit_slip_type: o.depositSlipType || null, remark: o.remark || null, order_date: o.date || null, updated_at: o.updatedAt || null,
-    delivery_stage: o.deliveryStage || null, has_issue: !!o.hasIssue, issue_remark: o.issueRemark || null, issue_resolved: !!o.issueResolved,
+    delivery_stage: o.deliveryStage || null, has_issue: !!o.hasIssue, issue_checked: !!o.issueChecked, issue_remark: o.issueRemark || null, issue_resolved: !!o.issueResolved,
     issue_proof_file: o.issueProofFile || null, issue_proof_url: o.issueProofUrl || null, issue_proof_type: o.issueProofType || null,
   };
 }
@@ -1818,11 +1822,10 @@ function DeliveryProgress({ order }) {
   if (order.status !== 'so_opened') return null;
 
   const soIssuedDone = true; // 走到这里代表SO已开
-  const stage = order.deliveryStage || 'arranging';
-  const arrangingDone = stage === 'delivered';
-  const deliveredDone = stage === 'delivered';
-  const issueActive = order.hasIssue && !order.issueResolved;
-  const issueResolved = order.hasIssue && order.issueResolved;
+  const arrangingDone = !!order.issueChecked || order.deliveryStage === 'delivered';
+  const deliveredDone = order.deliveryStage === 'delivered';
+  const issueActive = order.issueChecked && order.hasIssue && !order.issueResolved;
+  const issuesDone = order.issueChecked && (!order.hasIssue || order.issueResolved);
 
   const nodeColor = (done, active) => done ? C.teal : active ? '#3B82C4' : C.line;
   const nodeTextColor = (done, active) => done ? C.teal : active ? '#3B82C4' : C.sub;
@@ -1842,8 +1845,8 @@ function DeliveryProgress({ order }) {
         <Node label={t('stageSoIssued')} done={soIssuedDone} />
         <Connector done={arrangingDone} />
         <Node label={t('stageArranging')} done={arrangingDone} active={!arrangingDone} />
-        <Connector done={deliveredDone} />
-        <Node label={t('stageIssues')} done={issueResolved} active={issueActive} />
+        <Connector done={issuesDone} />
+        <Node label={t('stageIssues')} done={issuesDone} active={issueActive} />
         <Connector done={deliveredDone} />
         <Node label={t('stageDelivered')} done={deliveredDone} />
       </div>
@@ -1851,30 +1854,56 @@ function DeliveryProgress({ order }) {
   );
 }
 
-function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onFlagIssue, canResolveIssue, onResolveIssue, resolvingIssue }) {
+function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onSetIssueCheck, canResolveIssue, onResolveIssue, resolvingIssue }) {
   const { t } = useLang();
-  const [flaggingIssue, setFlaggingIssue] = useState(false);
-  const [issueRemarkInput, setIssueRemarkInput] = useState('');
+  const [editingIssue, setEditingIssue] = useState(false);
+  const [issueChecked, setIssueCheckedInput] = useState(!!order.hasIssue);
+  const [issueRemarkInput, setIssueRemarkInput] = useState(order.issueRemark || '');
+  const [issueError, setIssueError] = useState('');
+
+  const startEditIssue = () => {
+    setIssueCheckedInput(!!order.hasIssue);
+    setIssueRemarkInput(order.issueRemark || '');
+    setIssueError('');
+    setEditingIssue(true);
+  };
+  const confirmIssue = () => {
+    if (issueChecked && !issueRemarkInput.trim()) { setIssueError(t('issueRemarkRequired')); return; }
+    onSetIssueCheck(issueChecked, issueChecked ? issueRemarkInput.trim() : '');
+    setEditingIssue(false);
+  };
+
   return (
     <div>
       <DeliveryProgress order={order} />
       {order.status === 'so_opened' && onMarkDelivered && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          {order.deliveryStage !== 'delivered' && (
-            <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={onMarkDelivered}>{t('markDelivered')}</Btn>
-          )}
-          {!flaggingIssue && !(order.hasIssue && !order.issueResolved) && (
-            <Btn size="sm" variant="outline" icon={AlertTriangle} onClick={() => setFlaggingIssue(true)}>{t('flagIssue')}</Btn>
+          <Btn size="sm" variant="teal" icon={CheckCircle2} disabled={order.deliveryStage === 'delivered'} onClick={onMarkDelivered}>
+            {order.deliveryStage === 'delivered' ? t('stageDelivered') : t('markDelivered')}
+          </Btn>
+          {!editingIssue && (
+            <Btn size="sm" variant="outline" icon={AlertTriangle} onClick={startEditIssue}>
+              {order.issueChecked ? t('recheckIssue') : t('checkIssue')}
+            </Btn>
           )}
         </div>
       )}
-      {flaggingIssue && (
-        <div style={{ background: C.brickTint, border: `1px solid ${C.brick}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
-          <div style={{ fontSize: 12.5, color: C.brick, fontWeight: 600, marginBottom: 8 }}>{t('issueRemarkPrompt')}</div>
-          <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={issueRemarkInput} onChange={e => setIssueRemarkInput(e.target.value)} placeholder={t('issueRemarkPlaceholder')} />
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <Btn size="sm" variant="brick" icon={AlertTriangle} disabled={!issueRemarkInput.trim()} onClick={() => { onFlagIssue(issueRemarkInput); setFlaggingIssue(false); setIssueRemarkInput(''); }}>{t('confirmFlagIssue')}</Btn>
-            <Btn size="sm" variant="ghost" onClick={() => setFlaggingIssue(false)}>{t('cancel')}</Btn>
+      {editingIssue && (
+        <div style={{ background: C.woodTint, border: `1px solid ${C.wood}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: issueChecked ? 10 : 0 }}>
+            <input type="checkbox" checked={issueChecked} onChange={e => { setIssueCheckedInput(e.target.checked); setIssueError(''); }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{t('hasIssueCheckbox')}</span>
+          </label>
+          {issueChecked && (
+            <>
+              <div style={{ fontSize: 12, color: C.sub, marginBottom: 6 }}>{t('issueRemarkPrompt')}</div>
+              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={issueRemarkInput} onChange={e => { setIssueRemarkInput(e.target.value); setIssueError(''); }} placeholder={t('issueRemarkPlaceholder')} />
+            </>
+          )}
+          {issueError && <div style={{ color: C.brick, fontSize: 11.5, marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {issueError}</div>}
+          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+            <Btn size="sm" icon={CheckCircle2} onClick={confirmIssue}>{t('confirm')}</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => setEditingIssue(false)}>{t('cancel')}</Btn>
           </div>
         </div>
       )}
@@ -2026,7 +2055,10 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
   const toggleDetail = (id) => setDetailId(prev => prev === id ? null : id);
   const setLogisticStatus = (id, status) => setOrders(prev => prev.map(o => o.id === id ? { ...o, logisticStatus: status } : o));
   const markDelivered = (id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, deliveryStage: 'delivered' } : o));
-  const flagIssue = (id, remark) => setOrders(prev => prev.map(o => o.id === id ? { ...o, hasIssue: true, issueRemark: remark, issueResolved: false, issueProofFile: null, issueProofUrl: null } : o));
+  const setIssueCheck = (id, hasIssue, remark) => setOrders(prev => prev.map(o => o.id === id ? {
+    ...o, issueChecked: true, hasIssue, issueRemark: hasIssue ? remark : '',
+    issueResolved: false, issueProofFile: null, issueProofUrl: null,
+  } : o));
 
   return (
     <div>
@@ -2085,7 +2117,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                 {detailId === o.id && (
                   <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
                     <td colSpan={6} style={{ padding: 18 }}>
-                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onFlagIssue={(remark) => flagIssue(o.id, remark)} />
+                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onSetIssueCheck={(hasIssue, remark) => setIssueCheck(o.id, hasIssue, remark)} />
                     </td>
                   </tr>
                 )}
@@ -2160,7 +2192,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                 {detailId === o.id && (
                   <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
                     <td colSpan={6} style={{ padding: 18 }}>
-                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onFlagIssue={(remark) => flagIssue(o.id, remark)} />
+                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onSetIssueCheck={(hasIssue, remark) => setIssueCheck(o.id, hasIssue, remark)} />
                     </td>
                   </tr>
                 )}
