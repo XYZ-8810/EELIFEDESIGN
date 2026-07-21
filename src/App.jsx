@@ -370,6 +370,9 @@ const STRINGS = {
   confirmFlagIssue: { zh: '确认标记异常', en: 'Confirm Flag Issue' },
   issueWarningTitle: { zh: '此订单有异常，需要跟进', en: 'This order has an issue \u2014 follow-up needed' },
   issueResolvedNote: { zh: '异常已处理', en: 'Issue resolved' },
+  issuePendingApproval: { zh: '证据已上传，待Admin确认', en: 'Proof uploaded, awaiting Admin confirmation' },
+  approveResolution: { zh: '确认已处理', en: 'Approve Resolution' },
+  issueFlagLabel: { zh: '异常', en: 'Issue' },
   uploadIssueProof: { zh: '上传处理证据（WhatsApp截图或PDF）', en: 'Upload proof (WhatsApp screenshot or PDF)' },
   issueProofUploaded: { zh: '证据已上传，异常已标记为处理完成', en: 'Proof uploaded, issue marked as resolved' },
   viewIssueProof: { zh: '查看证据', en: 'View Proof' },
@@ -545,7 +548,7 @@ function orderRowToApp(r) {
     logisticFileUrl: r.logistic_file_url, logisticFileType: r.logistic_file_type, logisticStatus: r.logistic_status,
     depositAmount: r.deposit_amount != null ? Number(r.deposit_amount) : null, depositSlip: r.deposit_slip,
     depositSlipUrl: r.deposit_slip_url, depositSlipType: r.deposit_slip_type, remark: r.remark, date: r.order_date, updatedAt: r.updated_at,
-    deliveryStage: r.delivery_stage, hasIssue: r.has_issue, issueChecked: r.issue_checked, issueRemark: r.issue_remark, issueResolved: r.issue_resolved,
+    deliveryStage: r.delivery_stage, hasIssue: r.has_issue, issueChecked: r.issue_checked, issueRemark: r.issue_remark, issueResolved: r.issue_resolved, issueApproved: r.issue_approved,
     issueProofFile: r.issue_proof_file, issueProofUrl: r.issue_proof_url, issueProofType: r.issue_proof_type,
   };
 }
@@ -559,7 +562,7 @@ function orderAppToRow(o) {
     logistic_file_url: o.logisticFileUrl || null, logistic_file_type: o.logisticFileType || null, logistic_status: o.logisticStatus || null,
     deposit_amount: o.depositAmount != null ? o.depositAmount : null, deposit_slip: o.depositSlip || null,
     deposit_slip_url: o.depositSlipUrl || null, deposit_slip_type: o.depositSlipType || null, remark: o.remark || null, order_date: o.date || null, updated_at: o.updatedAt || null,
-    delivery_stage: o.deliveryStage || null, has_issue: !!o.hasIssue, issue_checked: !!o.issueChecked, issue_remark: o.issueRemark || null, issue_resolved: !!o.issueResolved,
+    delivery_stage: o.deliveryStage || null, has_issue: !!o.hasIssue, issue_checked: !!o.issueChecked, issue_remark: o.issueRemark || null, issue_resolved: !!o.issueResolved, issue_approved: !!o.issueApproved,
     issue_proof_file: o.issueProofFile || null, issue_proof_url: o.issueProofUrl || null, issue_proof_type: o.issueProofType || null,
   };
 }
@@ -1062,6 +1065,9 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
   const [expandedId, setExpandedId] = useState(null);
   const [resolvingIssueFor, setResolvingIssueFor] = useState(null);
   const filtered = filterOrdersBySearch(orders, query, statusFilter, claims);
+  const pinIssues = !!(currentUser && currentUser.role === 'salesman');
+  const isPinned = o => o.hasIssue && !o.issueApproved;
+  const sorted = pinIssues ? [...filtered].sort((a, b) => (isPinned(b) ? 1 : 0) - (isPinned(a) ? 1 : 0)) : filtered;
 
   const resolveIssue = async (order, file) => {
     if (!setOrders) return;
@@ -1098,14 +1104,17 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && (
+            {sorted.length === 0 && (
               <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>
             )}
-            {filtered.map(o => (
+            {sorted.map(o => (
               <React.Fragment key={o.id}>
               <tr style={{ borderTop: `1px solid ${C.line}` }}>
                 <td style={{ ...td, fontFamily: fontMono }}>
-                  <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: C.wood, fontFamily: fontMono, fontSize: 13, fontWeight: 700, textDecoration: 'underline', textAlign: 'left' }}>
+                  <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: C.wood, fontFamily: fontMono, fontSize: 13, fontWeight: 700, textDecoration: 'underline', textAlign: 'left', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    {pinIssues && isPinned(o) && (
+                      <span title={t('issueFlagLabel')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: C.brick, color: '#fff', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>!</span>
+                    )}
                     {o.id}
                   </button>
                   {o.soNumber && <div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div>}
@@ -1824,8 +1833,8 @@ function DeliveryProgress({ order }) {
   const soIssuedDone = true; // 走到这里代表SO已开
   const arrangingDone = !!order.issueChecked || order.deliveryStage === 'delivered';
   const deliveredDone = order.deliveryStage === 'delivered';
-  const issueActive = order.issueChecked && order.hasIssue && !order.issueResolved;
-  const issuesDone = order.issueChecked && (!order.hasIssue || order.issueResolved);
+  const issueActive = order.issueChecked && order.hasIssue && !order.issueApproved;
+  const issuesDone = order.issueChecked && (!order.hasIssue || order.issueApproved);
 
   const nodeColor = (done, active) => done ? C.teal : active ? '#3B82C4' : C.line;
   const nodeTextColor = (done, active) => done ? C.teal : active ? '#3B82C4' : C.sub;
@@ -1854,7 +1863,7 @@ function DeliveryProgress({ order }) {
   );
 }
 
-function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onSetIssueCheck, canResolveIssue, onResolveIssue, resolvingIssue }) {
+function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onSetIssueCheck, onApproveResolution, canResolveIssue, onResolveIssue, resolvingIssue }) {
   const { t } = useLang();
   const [editingIssue, setEditingIssue] = useState(false);
   const [issueChecked, setIssueCheckedInput] = useState(!!order.hasIssue);
@@ -1908,9 +1917,13 @@ function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDe
         </div>
       )}
       {order.hasIssue && (
-        <div style={{ background: order.issueResolved ? C.tealTint : C.brickTint, border: `1px solid ${order.issueResolved ? C.teal : C.brick}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: order.issueResolved ? C.teal : C.brick, marginBottom: 4 }}>
-            <AlertTriangle size={14} /> {order.issueResolved ? t('issueResolvedNote') : t('issueWarningTitle')}
+        <div style={{
+          background: order.issueApproved ? C.tealTint : order.issueResolved ? C.ochreTint : C.brickTint,
+          border: `1px solid ${order.issueApproved ? C.teal : order.issueResolved ? C.ochre : C.brick}`,
+          borderRadius: 8, padding: 14, marginBottom: 14,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: order.issueApproved ? C.teal : order.issueResolved ? C.ochre : C.brick, marginBottom: 4 }}>
+            <AlertTriangle size={14} /> {order.issueApproved ? t('issueResolvedNote') : order.issueResolved ? t('issuePendingApproval') : t('issueWarningTitle')}
           </div>
           <div style={{ fontSize: 12.5, color: C.ink }}>{order.issueRemark}</div>
           {order.issueProofUrl && (
@@ -1923,6 +1936,11 @@ function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDe
                 <span style={{ fontSize: 12.5, color: C.sub }}>{resolvingIssue ? '…' : t('uploadIssueProof')}</span>
                 <input type="file" accept="image/*,application/pdf" disabled={resolvingIssue} style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (f) onResolveIssue(f); }} />
               </label>
+            </div>
+          )}
+          {onApproveResolution && order.issueResolved && !order.issueApproved && (
+            <div style={{ marginTop: 10 }}>
+              <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={onApproveResolution}>{t('approveResolution')}</Btn>
             </div>
           )}
         </div>
@@ -2057,8 +2075,9 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
   const markDelivered = (id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, deliveryStage: 'delivered' } : o));
   const setIssueCheck = (id, hasIssue, remark) => setOrders(prev => prev.map(o => o.id === id ? {
     ...o, issueChecked: true, hasIssue, issueRemark: hasIssue ? remark : '',
-    issueResolved: false, issueProofFile: null, issueProofUrl: null,
+    issueResolved: false, issueApproved: false, issueProofFile: null, issueProofUrl: null,
   } : o));
+  const approveResolution = (id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, issueApproved: true } : o));
 
   return (
     <div>
@@ -2117,7 +2136,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                 {detailId === o.id && (
                   <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
                     <td colSpan={6} style={{ padding: 18 }}>
-                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onSetIssueCheck={(hasIssue, remark) => setIssueCheck(o.id, hasIssue, remark)} />
+                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onSetIssueCheck={(hasIssue, remark) => setIssueCheck(o.id, hasIssue, remark)} onApproveResolution={() => approveResolution(o.id)} />
                     </td>
                   </tr>
                 )}
@@ -2192,7 +2211,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                 {detailId === o.id && (
                   <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
                     <td colSpan={6} style={{ padding: 18 }}>
-                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onSetIssueCheck={(hasIssue, remark) => setIssueCheck(o.id, hasIssue, remark)} />
+                      <AdminOrderDetail order={o} onApproveLogistic={() => setLogisticStatus(o.id, 'approved')} onRejectLogistic={() => setLogisticStatus(o.id, 'rejected')} onMarkDelivered={() => markDelivered(o.id)} onSetIssueCheck={(hasIssue, remark) => setIssueCheck(o.id, hasIssue, remark)} onApproveResolution={() => approveResolution(o.id)} />
                     </td>
                   </tr>
                 )}
