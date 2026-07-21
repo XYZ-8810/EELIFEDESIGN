@@ -2040,6 +2040,8 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
   const matchesQuery = o => !orderQuery.trim() || o.id.toLowerCase().includes(orderQuery.trim().toLowerCase());
   const pendingFiltered = pending.filter(matchesQuery);
   const openedFiltered = opened.filter(matchesQuery);
+  const isPinned = o => o.hasIssue && !o.issueApproved;
+  const openedSorted = [...openedFiltered].sort((a, b) => (isPinned(b) ? 1 : 0) - (isPinned(a) ? 1 : 0));
   const rejectedFiltered = rejectedOrders.filter(matchesQuery);
 
   const startOpen = (o) => {
@@ -2192,10 +2194,18 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
           </tr></thead>
           <tbody>
             {openedFiltered.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>}
-            {openedFiltered.map(o => (
+            {openedSorted.map(o => (
               <React.Fragment key={o.id}>
                 <tr style={{ borderTop: `1px solid ${C.line}` }}>
-                  <td style={{ ...td, fontFamily: fontMono }}>{o.id}<div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div></td>
+                  <td style={{ ...td, fontFamily: fontMono }}>
+                    <button onClick={() => toggleDetail(o.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: C.wood, fontFamily: fontMono, fontSize: 13, fontWeight: 700, textDecoration: 'underline', textAlign: 'left', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      {isPinned(o) && (
+                        <span title={t('issueFlagLabel')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: C.brick, color: '#fff', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>!</span>
+                      )}
+                      {o.id}
+                    </button>
+                    <div style={{ fontSize: 10.5, color: C.teal }}>{o.soNumber}</div>
+                  </td>
                   <td style={td}>{o.customer}{o.deliveryUrgent && <div style={{ marginTop: 3 }}><StampBadge status={o.logisticStatus === 'approved' ? 'verified' : o.logisticStatus === 'rejected' ? 'rejected' : 'pending'} /></div>}</td>
                   <td style={td}>{o.agent}</td>
                   <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.total)}</td>
