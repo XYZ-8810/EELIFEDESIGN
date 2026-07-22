@@ -265,6 +265,8 @@ const STRINGS = {
   awaitingAccountApproval: { zh: '等待Account核实水单中，暂不会出现在这里', en: 'Awaiting Account approval \u2014 not shown here yet' },
   billPaymentExplainFinance: { zh: 'Total Bill = 订单总价　·　Total Payment = 收到的钱（水单金额）　·　Difference = Total Payment − Total Bill（负数代表收到的钱比订单总价少，可能有私下回扣，需要对账跟进）', en: 'Total Bill = order price　·　Total Payment = amount received (bank slip)　·　Difference = Total Payment − Total Bill (negative means less was received than the order price \u2014 possible private discount, needs follow-up)' },
   billPaymentExplainSalesman: { zh: 'Total Bill = 这笔订单的总价；Total Payment = 水单上收到的金额', en: 'Total Bill = this order\u2019s price; Total Payment = the amount shown on the bank slip' },
+  billPaymentExplainOrderForm: { zh: 'Total Bill 是依商品目录价格自动算出，不能更改；Total Payment 是这笔订单实际预计收到的金额，可以逐项调整（比如有议价）', en: 'Total Bill is calculated from the product catalog and cannot be changed; Total Payment is the amount actually expected to be received for this order, adjustable per item (e.g. for negotiated pricing)' },
+  lineAdjustableNote: { zh: '可调整', en: 'adjustable' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
   tabAccounts: { zh: '账号管理', en: 'Account Management' },
@@ -1360,6 +1362,7 @@ function ItemLine({ line, items, onChange, onRemove, removable }) {
   const item = items.find(i => i.code === line.itemCode);
   const addOnsTotal = (item?.addOns || []).filter(a => line.addOnCodes.includes(a.code)).reduce((s, a) => s + a.price, 0);
   const lineTotal = item ? (item.price + addOnsTotal) * line.qty : 0;
+  const paymentAmount = line.paymentAmount != null ? line.paymentAmount : lineTotal;
   const toggleAddOn = (code) => {
     const has = line.addOnCodes.includes(code);
     onChange({ ...line, addOnCodes: has ? line.addOnCodes.filter(c => c !== code) : [...line.addOnCodes, code] });
@@ -1368,7 +1371,7 @@ function ItemLine({ line, items, onChange, onRemove, removable }) {
   const matches = q === '' ? items : items.filter(i =>
     i.code.toLowerCase().includes(q) || i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q) || i.color.toLowerCase().includes(q)
   );
-  const selectItem = (it) => { onChange({ ...line, itemCode: it.code, addOnCodes: [] }); setQuery(''); setOpen(false); };
+  const selectItem = (it) => { onChange({ ...line, itemCode: it.code, addOnCodes: [], paymentAmount: null }); setQuery(''); setOpen(false); };
 
   return (
     <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: 14, marginBottom: 10, background: '#FBFAF7' }}>
@@ -1447,7 +1450,24 @@ function ItemLine({ line, items, onChange, onRemove, removable }) {
         </div>
       )}
       {item && (
-        <div style={{ marginTop: 10, fontSize: 12.5, fontFamily: fontMono, color: C.wood, fontWeight: 700 }}>{t('subtotalLabel')} {RM(lineTotal)}</div>
+        <div style={{ marginTop: 10, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div>
+            <div style={{ fontFamily: fontBody, fontSize: 11, color: C.sub, marginBottom: 4 }}>{t('totalBillLabel')}</div>
+            <div style={{ fontFamily: fontMono, fontSize: 13, color: C.ink, fontWeight: 700 }}>{RM(lineTotal)}</div>
+          </div>
+          <div>
+            <div style={{ fontFamily: fontBody, fontSize: 11, color: C.sub, marginBottom: 4 }}>{t('totalPaymentLabel')}（{t('lineAdjustableNote')}）</div>
+            <input
+              type="number"
+              style={{ ...inputStyle, width: 130, padding: '6px 8px', fontFamily: fontMono }}
+              value={paymentAmount}
+              onChange={e => onChange({ ...line, paymentAmount: e.target.value === '' ? 0 : Number(e.target.value) })}
+            />
+          </div>
+          {line.paymentAmount != null && line.paymentAmount !== lineTotal && (
+            <button onClick={() => onChange({ ...line, paymentAmount: null })} style={{ background: 'none', border: 'none', color: C.wood, cursor: 'pointer', fontSize: 11.5, textDecoration: 'underline', paddingBottom: 8 }}>{t('resetToItemsTotal')}</button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1463,9 +1483,8 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
   const [salesExecutive, setSalesExecutive] = useState(editOrder?.salesExecutive || user.name);
   const [salesmanPhone, setSalesmanPhone] = useState(editOrder?.salesmanPhone || '');
   const [lines, setLines] = useState(() =>
-    editOrder ? editOrder.items.map((it, i) => ({ id: Date.now() + i, itemCode: it.code, qty: it.qty, addOnCodes: (it.addOns || []).map(a => a.code) })) : [{ id: 1, itemCode: '', qty: 1, addOnCodes: [] }]
+    editOrder ? editOrder.items.map((it, i) => ({ id: Date.now() + i, itemCode: it.code, qty: it.qty, addOnCodes: (it.addOns || []).map(a => a.code), paymentAmount: it.paymentAmount ?? null })) : [{ id: 1, itemCode: '', qty: 1, addOnCodes: [], paymentAmount: null }]
   );
-  const [amountOverride, setAmountOverride] = useState(editOrder?.amount ?? null);
   const [deliveryUrgent, setDeliveryUrgent] = useState(editOrder?.deliveryUrgent || false);
   const [logisticFile, setLogisticFile] = useState(editOrder?.logisticFile || null);
   const [logisticFileUrl, setLogisticFileUrl] = useState(editOrder?.logisticFileUrl || null);
@@ -1482,15 +1501,16 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
 
   const lineDetail = (line) => {
     const item = items.find(i => i.code === line.itemCode);
-    if (!item) return { item: null, addOns: [], lineTotal: 0 };
+    if (!item) return { item: null, addOns: [], lineTotal: 0, paymentAmount: 0 };
     const addOns = item.addOns.filter(a => line.addOnCodes.includes(a.code));
     const lineTotal = (item.price + addOns.reduce((s, a) => s + a.price, 0)) * line.qty;
-    return { item, addOns, lineTotal };
+    const paymentAmount = line.paymentAmount != null ? line.paymentAmount : lineTotal;
+    return { item, addOns, lineTotal, paymentAmount };
   };
-  const itemsTotal = lines.reduce((s, l) => s + lineDetail(l).lineTotal, 0);
-  const amount = amountOverride !== null ? amountOverride : itemsTotal;
+  const itemsTotal = lines.reduce((s, l) => s + lineDetail(l).lineTotal, 0); // Total Bill：固定不受影响
+  const paymentTotal = lines.reduce((s, l) => s + lineDetail(l).paymentAmount, 0); // Total Payment：逐项加总
 
-  const addLine = () => setLines(prev => [...prev, { id: Date.now(), itemCode: '', qty: 1, addOnCodes: [] }]);
+  const addLine = () => setLines(prev => [...prev, { id: Date.now(), itemCode: '', qty: 1, addOnCodes: [], paymentAmount: null }]);
   const removeLine = (id) => setLines(prev => prev.filter(l => l.id !== id));
   const updateLine = (id, next) => setLines(prev => prev.map(l => l.id === id ? next : l));
 
@@ -1508,15 +1528,15 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
       const it = items.find(x => x.code === l.itemCode);
       if (it && it.addOns.length > 0 && l.addOnCodes.length === 0) errs.push(t('errAddOnRequired', { n: i + 1, name: it.name }));
     });
-    if (!amount || amount <= 0) errs.push(t('errAmountPositive'));
+    if (!paymentTotal || paymentTotal <= 0) errs.push(t('errAmountPositive'));
     if (deliveryUrgent && !logisticFile) errs.push(t('errLogisticRequired'));
     if (hasDeposit && !depositSlip) errs.push(t('errDepositSlipRequired2'));
     setErrors(errs);
     if (errs.length) return;
 
     const orderItems = lines.map(l => {
-      const { item, addOns } = lineDetail(l);
-      return { code: item.code, qty: l.qty, price: item.price, addOns: addOns.map(a => ({ code: a.code, name: a.name, price: a.price })) };
+      const { item, addOns, paymentAmount } = lineDetail(l);
+      return { code: item.code, qty: l.qty, price: item.price, paymentAmount, addOns: addOns.map(a => ({ code: a.code, name: a.name, price: a.price })) };
     });
 
     onSubmit({
@@ -1524,7 +1544,7 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
       customer: fullName, alamat, poscode, phone1, phone2,
       agent: user.name, team: user.team,
       salesExecutive, salesmanPhone,
-      items: orderItems, amount, total: amount,
+      items: orderItems, amount: paymentTotal, total: itemsTotal,
       deliveryUrgent,
       logisticFile: deliveryUrgent ? logisticFile : null,
       logisticFileUrl: deliveryUrgent ? logisticFileUrl : null,
@@ -1596,19 +1616,17 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
 
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 20, marginBottom: 16 }}>
         <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.1em', color: C.wood, textTransform: 'uppercase', marginBottom: 12 }}>{t('itemSection')}</div>
+        <div style={{ background: C.woodTint, border: `1px solid ${C.line}`, borderRadius: 8, padding: '9px 12px', fontSize: 11.5, color: C.wood, marginBottom: 12, lineHeight: 1.5 }}>
+          {t('billPaymentExplainOrderForm')}
+        </div>
         {lines.map(l => (
           <ItemLine key={l.id} line={l} items={items} onChange={next => updateLine(l.id, next)} onRemove={() => removeLine(l.id)} removable={lines.length > 1} />
         ))}
         <Btn size="sm" variant="outline" icon={Plus} onClick={addLine}>{t('addAnotherItem')}</Btn>
 
-        <Field label={t('amountLabel')}>
-          <input type="number" style={inputStyle} value={amount} onChange={e => setAmountOverride(e.target.value === '' ? 0 : Number(e.target.value))} />
-        </Field>
-        <div style={{ fontSize: 12, color: C.sub, marginTop: -8, marginBottom: 4 }}>
-          {t('itemsTotalNote')}：{RM(itemsTotal)}
-          {amountOverride !== null && amountOverride !== itemsTotal && (
-            <button onClick={() => setAmountOverride(null)} style={{ marginLeft: 8, background: 'none', border: 'none', color: C.wood, cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>{t('resetToItemsTotal')}</button>
-          )}
+        <div style={{ marginTop: 16, background: C.woodTint, borderRadius: 8, padding: '12px 14px', fontFamily: fontMono, fontSize: 13 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{t('totalBillLabel')}</span><span style={{ fontWeight: 700 }}>{RM(itemsTotal)}</span></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}><span>{t('totalPaymentLabel')}</span><span style={{ fontWeight: 700, color: C.wood }}>{RM(paymentTotal)}</span></div>
         </div>
       </div>
 
