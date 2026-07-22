@@ -263,6 +263,8 @@ const STRINGS = {
   teamRankPrefix: { zh: '第', en: '#' },
   teamRankSuffix: { zh: '名', en: '' },
   awaitingAccountApproval: { zh: '等待Account核实水单中，暂不会出现在这里', en: 'Awaiting Account approval \u2014 not shown here yet' },
+  billPaymentExplainFinance: { zh: 'Total Bill = 订单总价　·　Total Payment = 收到的钱（水单金额）　·　Difference = Total Payment − Total Bill（负数代表收到的钱比订单总价少，可能有私下回扣，需要对账跟进）', en: 'Total Bill = order price　·　Total Payment = amount received (bank slip)　·　Difference = Total Payment − Total Bill (negative means less was received than the order price \u2014 possible private discount, needs follow-up)' },
+  billPaymentExplainSalesman: { zh: 'Total Bill = 这笔订单的总价；Total Payment = 水单上收到的金额', en: 'Total Bill = this order\u2019s price; Total Payment = the amount shown on the bank slip' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
   tabAccounts: { zh: '账号管理', en: 'Account Management' },
@@ -1816,7 +1818,10 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
         )}
         {step === 4 && order && (
           <div>
-            <div style={{ fontSize: 13, color: C.sub, marginBottom: 12 }}>{t('reviewAmountHint')}</div>
+            <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>{t('reviewAmountHint')}</div>
+            <div style={{ background: C.woodTint, border: `1px solid ${C.line}`, borderRadius: 8, padding: '9px 12px', fontSize: 11.5, color: C.wood, marginBottom: 12, lineHeight: 1.5 }}>
+              {t('billPaymentExplainSalesman')}
+            </div>
             <Field label={t('paymentAmountLabel')}>
               <input type="number" style={inputStyle} value={slipAmount} onChange={e => setSlipAmount(e.target.value)} />
             </Field>
@@ -2685,6 +2690,9 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
         <div>
           <div style={{ background: C.woodTint, border: `1px solid ${C.line}`, borderRadius: 8, padding: '10px 14px', fontSize: 12, color: C.wood, marginBottom: 14 }}>
             {t('awaitingAccountApproval')}
+          </div>
+          <div style={{ background: C.tealTint, border: `1px solid ${C.teal}`, borderRadius: 8, padding: '10px 14px', fontSize: 12, color: C.ink, marginBottom: 14, lineHeight: 1.6 }}>
+            {t('billPaymentExplainFinance')}
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             {['all', 'pending', 'verified', 'rejected'].map(f => (
