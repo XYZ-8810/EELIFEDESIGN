@@ -254,9 +254,15 @@ const STRINGS = {
   driveSyncedNote: { zh: '已自动同步至 Google Drive 文件夹 {folder}，档名已存为 {file}，方便日后以 SO 编号找回。', en: 'Auto-synced to Google Drive folder {folder}, saved as {file} for easy retrieval by SO number.' },
   driveSyncedSub: { zh: '（原型模拟同步结果，正式版将串接 Google Drive API 自动上传）', en: '(Simulated sync \u2014 production will integrate the Google Drive API)' },
   reviewAmountHint: { zh: '系统已从水单提取金额，可手动核对／调整：', en: 'Amount extracted from the slip \u2014 you can review/adjust it:' },
-  paymentAmountLabel: { zh: '水单金额 Payment Amount (RM)', en: 'Payment Amount (RM)' },
-  paymentAmountRow: { zh: '水单金额 Payment Amount', en: 'Payment Amount' },
-  orderTotalRow: { zh: '订单总额 Order Total Amount', en: 'Order Total Amount' },
+  paymentAmountLabel: { zh: 'Total Payment（水单金额，RM）', en: 'Total Payment (RM)' },
+  paymentAmountRow: { zh: 'Total Payment（水单金额）', en: 'Total Payment' },
+  orderTotalRow: { zh: 'Total Bill（订单总额）', en: 'Total Bill' },
+  totalBillLabel: { zh: 'Total Bill', en: 'Total Bill' },
+  totalPaymentLabel: { zh: 'Total Payment', en: 'Total Payment' },
+  differenceLabel: { zh: '相差 Difference', en: 'Difference' },
+  teamRankPrefix: { zh: '第', en: '#' },
+  teamRankSuffix: { zh: '名', en: '' },
+  awaitingAccountApproval: { zh: '等待Account核实水单中，暂不会出现在这里', en: 'Awaiting Account approval \u2014 not shown here yet' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
   tabAccounts: { zh: '账号管理', en: 'Account Management' },
@@ -506,7 +512,7 @@ const INIT_ORDERS = [
 ];
 
 const INIT_CLAIMS = [
-  { id: 'CM-3001', orderId: 'ORD-0997', agent: 'Amy Tan', team: 'howly', method: 'bank', slipFile: 'slip_0997.jpg', slipAmount: 2000, itemAmount: 1899, claimAmount: 101, transferVerified: true, status: 'verified', date: '2026-06-16' },
+  { id: 'CM-3001', orderId: 'ORD-0997', agent: 'Amy Tan', team: 'howly', method: 'bank', slipFile: 'slip_0997.jpg', slipAmount: 2000, itemAmount: 1899, claimAmount: 101, transferVerified: true, status: 'verified', date: '2026-06-16', slipApproved: true },
   { id: 'CM-3002', orderId: 'ORD-0988', agent: 'Faye Ng', team: 'nova', method: 'bank', slipFile: 'slip_0988.jpg', slipAmount: 2599, itemAmount: 2599, claimAmount: 0, transferVerified: true, status: 'pending', date: '2026-06-11' },
   { id: 'CM-3003', orderId: 'ORD-0975', agent: 'Chloe Lim', team: 'howly', method: 'cash', slipFile: 'slip_0975.jpg', slipAmount: 5799, itemAmount: 5899, claimAmount: -100, transferVerified: false, status: 'rejected', date: '2026-06-03' },
 ];
@@ -2646,12 +2652,15 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
   const [filter, setFilter] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
 
-  const filtered = filter === 'all' ? claims : claims.filter(c => c.status === filter);
+  const approvedClaims = claims.filter(c => c.slipApproved);
+  const filtered = filter === 'all' ? approvedClaims : approvedClaims.filter(c => c.status === filter);
   const teamSales = Object.values(teams).map(tm => ({
+    teamId: tm.id,
     team: tm.name,
     total: orders.filter(o => o.team === tm.id && o.status === 'so_opened').reduce((s, o) => s + o.total, 0),
     count: orders.filter(o => o.team === tm.id && o.status === 'so_opened').length,
-  }));
+  })).sort((a, b) => b.total - a.total);
+  const [expandedTeam, setExpandedTeam] = useState(null);
 
   const setStatus = (id, status) => setClaims(prev => prev.map(c => c.id === id ? { ...c, status } : c));
 
@@ -2674,6 +2683,9 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
 
       {tab === 'commission' && (
         <div>
+          <div style={{ background: C.woodTint, border: `1px solid ${C.line}`, borderRadius: 8, padding: '10px 14px', fontSize: 12, color: C.wood, marginBottom: 14 }}>
+            {t('awaitingAccountApproval')}
+          </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             {['all', 'pending', 'verified', 'rejected'].map(f => (
               <button key={f} onClick={() => setFilter(f)} style={{
@@ -2685,7 +2697,7 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
           <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
               <thead><tr style={{ background: C.woodTint }}>
-                <th style={th}>{t('colClaimId')}</th><th style={th}>{t('colOrder')}</th><th style={th}>{t('agentCol')}</th><th style={th}>{t('step2')}</th><th style={th}>{t('colSlipCheck')}</th><th style={th}>{t('colDriveFile')}</th><th style={th}>{t('colClaimAmount')}</th><th style={th}>{t('statusCol')}</th><th style={th}></th>
+                <th style={th}>{t('colClaimId')}</th><th style={th}>{t('colOrder')}</th><th style={th}>{t('agentCol')}</th><th style={th}>{t('step2')}</th><th style={th}>{t('colSlipCheck')}</th><th style={th}>{t('colDriveFile')}</th><th style={th}>{t('totalBillLabel')}</th><th style={th}>{t('totalPaymentLabel')}</th><th style={th}>{t('differenceLabel')}</th><th style={th}>{t('statusCol')}</th><th style={th}></th>
               </tr></thead>
               <tbody>
                 {filtered.map(c => {
@@ -2707,7 +2719,11 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
                             </div>
                           ) : <span style={{ color: C.sub, fontSize: 12 }}>—</span>}
                         </td>
-                        <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(c.claimAmount)}</td>
+                        <td style={{ ...td, fontFamily: fontMono }}>{RM(order ? order.total : c.itemAmount)}</td>
+                        <td style={{ ...td, fontFamily: fontMono }}>{RM(c.slipAmount)}</td>
+                        <td style={{ ...td, fontFamily: fontMono, fontWeight: 700, color: (c.slipAmount - (order ? order.total : c.itemAmount)) < 0 ? C.brick : C.teal }}>
+                          {RM(c.slipAmount - (order ? order.total : c.itemAmount))}
+                        </td>
                         <td style={td}><StampBadge status={c.status} /></td>
                         <td style={td}>
                           <div style={{ display: 'flex', gap: 6 }}>
@@ -2723,7 +2739,7 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
                       </tr>
                       {isOpen && (
                         <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
-                          <td colSpan={9} style={{ padding: 18 }}>
+                          <td colSpan={10} style={{ padding: 18 }}>
                             <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                               <div style={{ flex: '1 1 200px' }}>
                                 <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.08em', color: C.wood, textTransform: 'uppercase', marginBottom: 8 }}>{t('bankSlipTitle')}</div>
@@ -2779,13 +2795,25 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
 
       {tab === 'sales' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {teamSales.map(row => (
-            <div key={row.team} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontFamily: fontDisplay, fontSize: 17, fontWeight: 600 }}>{row.team}</div>
-                <div style={{ fontSize: 12.5, color: C.sub }}>{row.count} {t('teamSalesCount')}</div>
+          {teamSales.map((row, idx) => (
+            <div key={row.team}>
+              <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ fontFamily: fontDisplay, fontSize: 20, fontWeight: 700, color: C.wood, minWidth: 30 }}>{t('teamRankPrefix')}{idx + 1}{t('teamRankSuffix')}</div>
+                  <div>
+                    <button onClick={() => setExpandedTeam(expandedTeam === row.teamId ? null : row.teamId)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: fontDisplay, fontSize: 17, fontWeight: 600, color: C.wood, textDecoration: 'underline' }}>
+                      {row.team}
+                    </button>
+                    <div style={{ fontSize: 12.5, color: C.sub }}>{row.count} {t('teamSalesCount')}</div>
+                  </div>
+                </div>
+                <div style={{ fontFamily: fontMono, fontSize: 20, fontWeight: 700, color: C.wood }}>{RM(row.total)}</div>
               </div>
-              <div style={{ fontFamily: fontMono, fontSize: 20, fontWeight: 700, color: C.wood }}>{RM(row.total)}</div>
+              {expandedTeam === row.teamId && (
+                <div style={{ marginTop: 10 }}>
+                  <OrderTable orders={orders.filter(o => o.team === row.teamId)} />
+                </div>
+              )}
             </div>
           ))}
         </div>
