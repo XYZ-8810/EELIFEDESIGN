@@ -373,6 +373,22 @@ const STRINGS = {
   issuePendingApproval: { zh: '证据已上传，待Admin确认', en: 'Proof uploaded, awaiting Admin confirmation' },
   approveResolution: { zh: '确认已处理', en: 'Approve Resolution' },
   issueFlagLabel: { zh: '异常', en: 'Issue' },
+  role_account: { zh: 'Account', en: 'Account' },
+  role_account_sub: { zh: '收款核实', en: 'Payment Verification' },
+  role_account_desc: { zh: '查看、下载、核实水单', en: 'Check, download, and approve bank slips' },
+  nav_bank_slips: { zh: '水单核实', en: 'Bank Slips' },
+  accountDashboardTitle: { zh: '水单核实', en: 'Bank Slip Verification' },
+  colBankSlip: { zh: '水单', en: 'Bank Slip' },
+  approveSlip: { zh: '核实水单', en: 'Approve Slip' },
+  slipApprovedTag: { zh: '水单已核实', en: 'Slip Approved' },
+  slipPendingTag: { zh: '待核实', en: 'Pending' },
+  downloadSlip: { zh: '下载水单', en: 'Download' },
+  paymentReceivedTag: { zh: '已收到 Payment', en: 'Payment Received' },
+  paymentStatusLabel: { zh: 'Payment 状态', en: 'Payment Status' },
+  paymentPendingTag: { zh: '尚未确认 Payment', en: 'Payment Not Confirmed' },
+  changeTeamAction: { zh: '更换团队', en: 'Change Team' },
+  confirmChangeTeam: { zh: '确认更换', en: 'Confirm Change' },
+  chooseNewTeam: { zh: '— 选择新团队 —', en: '— Select New Team —' },
   uploadIssueProof: { zh: '上传处理证据（WhatsApp截图或PDF）', en: 'Upload proof (WhatsApp screenshot or PDF)' },
   issueProofUploaded: { zh: '证据已上传，异常已标记为处理完成', en: 'Proof uploaded, issue marked as resolved' },
   viewIssueProof: { zh: '查看证据', en: 'View Proof' },
@@ -549,6 +565,7 @@ function orderRowToApp(r) {
     depositAmount: r.deposit_amount != null ? Number(r.deposit_amount) : null, depositSlip: r.deposit_slip,
     depositSlipUrl: r.deposit_slip_url, depositSlipType: r.deposit_slip_type, remark: r.remark, date: r.order_date, updatedAt: r.updated_at,
     deliveryStage: r.delivery_stage, hasIssue: r.has_issue, issueChecked: r.issue_checked, issueRemark: r.issue_remark, issueResolved: r.issue_resolved, issueApproved: r.issue_approved,
+    paymentReceived: r.payment_received,
     issueProofFile: r.issue_proof_file, issueProofUrl: r.issue_proof_url, issueProofType: r.issue_proof_type,
   };
 }
@@ -563,6 +580,7 @@ function orderAppToRow(o) {
     deposit_amount: o.depositAmount != null ? o.depositAmount : null, deposit_slip: o.depositSlip || null,
     deposit_slip_url: o.depositSlipUrl || null, deposit_slip_type: o.depositSlipType || null, remark: o.remark || null, order_date: o.date || null, updated_at: o.updatedAt || null,
     delivery_stage: o.deliveryStage || null, has_issue: !!o.hasIssue, issue_checked: !!o.issueChecked, issue_remark: o.issueRemark || null, issue_resolved: !!o.issueResolved, issue_approved: !!o.issueApproved,
+    payment_received: !!o.paymentReceived,
     issue_proof_file: o.issueProofFile || null, issue_proof_url: o.issueProofUrl || null, issue_proof_type: o.issueProofType || null,
   };
 }
@@ -573,7 +591,7 @@ function claimRowToApp(r) {
     slipUrl: r.slip_url, slipType: r.slip_type, slipAmount: r.slip_amount != null ? Number(r.slip_amount) : null,
     itemAmount: r.item_amount != null ? Number(r.item_amount) : null, claimAmount: r.claim_amount != null ? Number(r.claim_amount) : null,
     transferVerified: r.transfer_verified, status: r.status, driveFileName: r.drive_file_name, driveFolder: r.drive_folder,
-    driveFolderUrl: r.drive_folder_url, date: r.claim_date,
+    driveFolderUrl: r.drive_folder_url, date: r.claim_date, slipApproved: r.slip_approved,
   };
 }
 function claimAppToRow(c) {
@@ -581,7 +599,7 @@ function claimAppToRow(c) {
     id: c.id, order_id: c.orderId, agent: c.agent, team: c.team, method: c.method, slip_file: c.slipFile || null,
     slip_url: c.slipUrl || null, slip_type: c.slipType || null, slip_amount: c.slipAmount, item_amount: c.itemAmount, claim_amount: c.claimAmount,
     transfer_verified: !!c.transferVerified, status: c.status, drive_file_name: c.driveFileName || null, drive_folder: c.driveFolder || null,
-    drive_folder_url: c.driveFolderUrl || null, claim_date: c.date || null,
+    drive_folder_url: c.driveFolderUrl || null, claim_date: c.date || null, slip_approved: !!c.slipApproved,
   };
 }
 
@@ -814,6 +832,7 @@ function LoginScreen({ onLogin, accounts }) {
     { id: 'leader', title: t('role_leader'), sub: t('role_leader_sub'), desc: t('role_leader_desc'), icon: Users },
     { id: 'admin', title: t('role_admin'), sub: t('role_admin_sub'), desc: t('role_admin_desc'), icon: FileStack },
     { id: 'finance', title: t('role_finance'), sub: t('role_finance_sub'), desc: t('role_finance_desc'), icon: Receipt },
+    { id: 'account', title: t('role_account'), sub: t('role_account_sub'), desc: t('role_account_desc'), icon: ShieldCheck },
   ];
 
   if (!role) {
@@ -856,6 +875,7 @@ function LoginScreen({ onLogin, accounts }) {
   if (role === 'leader') people = accounts.filter(a => a.role === 'leader').map(a => ({ key: a.id, label: teams[a.team]?.name, sub: teams[a.team]?.leader ? `Team Leader · ${teams[a.team].leader}` : null, team: a.team, leaderName: teams[a.team]?.leader, accountId: a.id, email: a.email }));
   if (role === 'admin') people = accounts.filter(a => a.role === 'admin').map(a => ({ key: a.id, label: a.name, team: null, accountId: a.id, email: a.email }));
   if (role === 'finance') people = accounts.filter(a => a.role === 'finance').map(a => ({ key: a.id, label: a.name || 'Finance User', team: null, accountId: a.id, email: a.email }));
+  if (role === 'account') people = accounts.filter(a => a.role === 'account').map(a => ({ key: a.id, label: a.name || 'Account User', team: null, accountId: a.id, email: a.email }));
 
   return (
     <div style={{ minHeight: '100vh', background: C.ink, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -1012,7 +1032,7 @@ function TeamChart({ team, orders, accounts }) {
 }
 
 /* ============================== 订单表 ============================== */
-function filterOrdersBySearch(orders, query, statusFilter, claims) {
+function filterOrdersBySearch(orders, query, statusFilter, claims, dateFilter) {
   const q = (query || '').trim().toLowerCase();
   const claimByOrder = new Map();
   (claims || []).forEach(c => { if (!claimByOrder.has(c.orderId)) claimByOrder.set(c.orderId, c); });
@@ -1023,6 +1043,7 @@ function filterOrdersBySearch(orders, query, statusFilter, claims) {
     if (statusFilter === 'not_claimed' && (o.status !== 'so_opened' || claim)) return false;
     if (statusFilter === 'claim_pending' && (!claim || claim.status !== 'pending')) return false;
     if (statusFilter === 'claimed' && (!claim || claim.status !== 'verified')) return false;
+    if (dateFilter && (o.date || '').slice(0, 10) !== dateFilter) return false;
     if (q) {
       const matchesId = o.id.toLowerCase().includes(q);
       const matchesSo = (o.soNumber || '').toLowerCase().includes(q);
@@ -1032,7 +1053,7 @@ function filterOrdersBySearch(orders, query, statusFilter, claims) {
   });
 }
 
-function OrderSearchBar({ query, setQuery, statusFilter, setStatusFilter, showClaimFilter }) {
+function OrderSearchBar({ query, setQuery, statusFilter, setStatusFilter, dateFilter, setDateFilter, showClaimFilter }) {
   const { t } = useLang();
   const statusOptions = [
     ['all', t('filterStatusAll')],
@@ -1051,6 +1072,15 @@ function OrderSearchBar({ query, setQuery, statusFilter, setStatusFilter, showCl
           style={{ ...inputStyle, paddingLeft: 32 }}
         />
       </div>
+      <input
+        type="date"
+        value={dateFilter}
+        onChange={e => setDateFilter(e.target.value)}
+        style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }}
+      />
+      {dateFilter && (
+        <button onClick={() => setDateFilter('')} style={{ background: 'none', border: `1px solid ${C.line}`, borderRadius: 6, padding: '0 10px', cursor: 'pointer', fontSize: 12, color: C.sub }}>{t('cancel')}</button>
+      )}
       <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', flex: '0 1 180px' }}>
         {statusOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
@@ -1062,9 +1092,10 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
   const { t } = useLang();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [resolvingIssueFor, setResolvingIssueFor] = useState(null);
-  const filtered = filterOrdersBySearch(orders, query, statusFilter, claims);
+  const filtered = filterOrdersBySearch(orders, query, statusFilter, claims, dateFilter);
   const pinIssues = !!(currentUser && currentUser.role === 'salesman');
   const isPinned = o => o.hasIssue && !o.issueApproved;
   const sorted = pinIssues ? [...filtered].sort((a, b) => (isPinned(b) ? 1 : 0) - (isPinned(a) ? 1 : 0)) : filtered;
@@ -1085,7 +1116,7 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
     <div>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       {searchable && (
-        <OrderSearchBar query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} showClaimFilter={!!claims} />
+        <OrderSearchBar query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} showClaimFilter={!!claims} />
       )}
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
@@ -1956,6 +1987,16 @@ function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDe
           <div><b>{t('salesmanPhoneLabel')}</b>{order.salesmanPhone || '—'}</div>
           <div><b>{t('itemsLabel')}</b>{order.items.map(it => `${it.code} x${it.qty}${it.addOns && it.addOns.length ? `（+${it.addOns.map(a => a.name).join(', ')}）` : ''}`).join('；')}</div>
           <div><b>{t('orderTotalLabel')}</b>{RM(order.total)}</div>
+          {order.status === 'so_opened' && (
+            <div>
+              <b>{t('paymentStatusLabel')}：</b>
+              {order.paymentReceived ? (
+                <span style={{ color: C.teal, fontWeight: 700 }}>{t('paymentReceivedTag')}</span>
+              ) : (
+                <span style={{ color: C.ochre, fontWeight: 700 }}>{t('paymentPendingTag')}</span>
+              )}
+            </div>
+          )}
           {(order.depositSlip || order.depositAmount != null) && (
             <div><b>{t('depositLabel')}</b>{order.depositAmount != null ? RM(order.depositAmount) : t('amountUnfilled')}</div>
           )}
@@ -2037,7 +2078,11 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
   const rejectedOrders = orders.filter(o => o.status === 'so_rejected');
   const pendingLogistics = orders.filter(o => o.deliveryUrgent && o.logisticStatus === 'pending').length;
   const [orderQuery, setOrderQuery] = useState('');
-  const matchesQuery = o => !orderQuery.trim() || o.id.toLowerCase().includes(orderQuery.trim().toLowerCase());
+  const [orderDateFilter, setOrderDateFilter] = useState('');
+  const matchesQuery = o => {
+    if (orderDateFilter && (o.date || '').slice(0, 10) !== orderDateFilter) return false;
+    return !orderQuery.trim() || o.id.toLowerCase().includes(orderQuery.trim().toLowerCase());
+  };
   const pendingFiltered = pending.filter(matchesQuery);
   const openedFiltered = opened.filter(matchesQuery);
   const isPinned = o => o.hasIssue && !o.issueApproved;
@@ -2098,9 +2143,15 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
 
       {tab === 'orders' && (
         <>
-      <div style={{ position: 'relative', maxWidth: 320, marginBottom: 16 }}>
-        <Search size={14} color={C.sub} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)' }} />
-        <input value={orderQuery} onChange={e => setOrderQuery(e.target.value)} placeholder={t('searchOrderPlaceholder')} style={{ ...inputStyle, paddingLeft: 32 }} />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', maxWidth: 320, flex: '1 1 240px' }}>
+          <Search size={14} color={C.sub} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)' }} />
+          <input value={orderQuery} onChange={e => setOrderQuery(e.target.value)} placeholder={t('searchOrderPlaceholder')} style={{ ...inputStyle, paddingLeft: 32 }} />
+        </div>
+        <input type="date" value={orderDateFilter} onChange={e => setOrderDateFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} />
+        {orderDateFilter && (
+          <button onClick={() => setOrderDateFilter('')} style={{ background: 'none', border: `1px solid ${C.line}`, borderRadius: 6, padding: '0 10px', cursor: 'pointer', fontSize: 12, color: C.sub }}>{t('cancel')}</button>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
         <StatCard label={t('statPendingSo')} value={pending.length} color={C.ochre} icon={Clock} />
@@ -2300,6 +2351,9 @@ function AccountsManager({ accounts, setAccounts }) {
     } else if (creatingRole === 'admin') {
       if (!name.trim()) { setError(t('accountName')); return; }
       payload = { role: 'admin', name: name.trim(), password };
+    } else if (creatingRole === 'account') {
+      if (!name.trim()) { setError(t('accountName')); return; }
+      payload = { role: 'account', name: name.trim(), password };
     }
     if (!payload) return;
     setCreatingBusy(true);
@@ -2311,6 +2365,20 @@ function AccountsManager({ accounts, setAccounts }) {
   };
 
   const [resetError, setResetError] = useState('');
+  const [changingTeamId, setChangingTeamId] = useState(null);
+  const [changeTeamValue, setChangeTeamValue] = useState('');
+  const [changeTeamBusy, setChangeTeamBusy] = useState(false);
+
+  const confirmChangeTeam = async (id) => {
+    if (!changeTeamValue) return;
+    setChangeTeamBusy(true);
+    const { data, error: fnError } = await supabase.functions.invoke('accounts-admin', { body: { action: 'updateTeam', userId: id, team: changeTeamValue } });
+    setChangeTeamBusy(false);
+    if (fnError || data?.error) { console.error(fnError || data.error); return; }
+    setAccounts(prev => prev.map(a => a.id === id ? { ...a, team: changeTeamValue } : a));
+    setChangingTeamId(null); setChangeTeamValue('');
+  };
+
   const confirmReset = async (id) => {
     if (!resetValue.trim() || resetValue.length < 6) { setResetError(t('passwordTooShort')); return; }
     const { data, error: fnError } = await supabase.functions.invoke('accounts-admin', { body: { action: 'resetPassword', userId: id, newPassword: resetValue } });
@@ -2322,7 +2390,7 @@ function AccountsManager({ accounts, setAccounts }) {
     await supabase.functions.invoke('accounts-admin', { body: { action: 'delete', userId: id } });
   };
 
-  const roleLabel = (r) => ({ salesman: t('role_salesman'), leader: t('role_leader'), admin: t('role_admin'), finance: t('role_finance') }[r] || r);
+  const roleLabel = (r) => ({ salesman: t('role_salesman'), leader: t('role_leader'), admin: t('role_admin'), finance: t('role_finance'), account: t('role_account') }[r] || r);
   const nameTeamLabel = (a) => a.role === 'leader' ? (teams[a.team]?.leader ? `${teams[a.team]?.name} (${teams[a.team].leader})` : teams[a.team]?.name) : a.role === 'salesman' ? `${a.name} · ${teams[a.team]?.name}` : a.name;
 
   return (
@@ -2332,7 +2400,7 @@ function AccountsManager({ accounts, setAccounts }) {
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {['salesman', 'leader', 'admin'].map(r => (
+        {['salesman', 'leader', 'admin', 'account'].map(r => (
           <Btn key={r} size="sm" variant="outline" icon={Plus} onClick={() => startCreate(r)}>{t('createAccount')} · {roleLabel(r)}</Btn>
         ))}
       </div>
@@ -2366,7 +2434,7 @@ function AccountsManager({ accounts, setAccounts }) {
                 <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>{t('teamNameReuseNote')}</div>
               </div>
             )}
-            {creatingRole === 'admin' && (
+            {(creatingRole === 'admin' || creatingRole === 'account') && (
               <div>
                 <div style={{ fontFamily: fontBody, fontSize: 12, color: C.sub, marginBottom: 6, fontWeight: 600 }}>{t('accountName')}</div>
                 <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} />
@@ -2410,10 +2478,23 @@ function AccountsManager({ accounts, setAccounts }) {
                   ) : '••••••'}
                 </td>
                 <td style={td}>
-                  {resettingId !== a.id && a.role !== 'finance' && (
-                    <div style={{ display: 'flex', gap: 6 }}>
+                  {resettingId !== a.id && changingTeamId !== a.id && a.role !== 'finance' && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <Btn size="sm" variant="outline" icon={Lock} onClick={() => { setResettingId(a.id); setResetValue(''); }}>{t('resetPassword')}</Btn>
+                      {a.role === 'salesman' && (
+                        <Btn size="sm" variant="outline" icon={RefreshCw} onClick={() => { setChangingTeamId(a.id); setChangeTeamValue(a.team || ''); }}>{t('changeTeamAction')}</Btn>
+                      )}
                       <Btn size="sm" variant="brick" icon={Trash2} onClick={() => deleteAccount(a.id)}>{t('delete')}</Btn>
+                    </div>
+                  )}
+                  {changingTeamId === a.id && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select value={changeTeamValue} onChange={e => setChangeTeamValue(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '6px 8px' }}>
+                        <option value="">{t('chooseNewTeam')}</option>
+                        {Object.values(teams).map(tm => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
+                      </select>
+                      <Btn size="sm" icon={CheckCircle2} disabled={!changeTeamValue || changeTeamBusy} onClick={() => confirmChangeTeam(a.id)}>{changeTeamBusy ? '…' : t('confirmChangeTeam')}</Btn>
+                      <Btn size="sm" variant="ghost" onClick={() => setChangingTeamId(null)}>{t('cancel')}</Btn>
                     </div>
                   )}
                 </td>
@@ -2475,6 +2556,82 @@ function ItemsManager({ items, setItems }) {
                 </td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AccountDashboard({ orders, claims, setClaims, setOrders }) {
+  const { t } = useLang();
+  const [expandedId, setExpandedId] = useState(null);
+  const [filter, setFilter] = useState('all');
+
+  const approveSlip = (claim) => {
+    const nowStamp = nowDateTime();
+    setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, slipApproved: true } : c));
+    if (claim.orderId) setOrders(prev => prev.map(o => o.id === claim.orderId ? { ...o, paymentReceived: true } : o));
+  };
+
+  const filtered = filter === 'all' ? claims : filter === 'approved' ? claims.filter(c => c.slipApproved) : claims.filter(c => !c.slipApproved);
+
+  return (
+    <div>
+      <SectionTitle eyebrow="Account" title={t('accountDashboardTitle')} />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {['all', 'pending', 'approved'].map(f => (
+          <button key={f} onClick={() => setFilter(f)} style={{
+            fontSize: 12, padding: '6px 12px', borderRadius: 20, border: `1px solid ${filter === f ? C.wood : C.line}`,
+            background: filter === f ? C.woodTint : '#fff', color: filter === f ? C.wood : C.sub, cursor: 'pointer', fontFamily: fontBody, fontWeight: 600,
+          }}>{{ all: t('filterAll'), pending: t('slipPendingTag'), approved: t('slipApprovedTag') }[f]}</button>
+        ))}
+      </div>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
+          <thead><tr style={{ background: C.woodTint }}>
+            <th style={th}>{t('colClaimId')}</th><th style={th}>{t('colOrder')}</th><th style={th}>{t('agentCol')}</th>
+            <th style={th}>{t('colBankSlip')}</th><th style={th}>{t('colClaimAmount')}</th><th style={th}></th>
+          </tr></thead>
+          <tbody>
+            {filtered.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noRecords')}</td></tr>}
+            {filtered.map(c => {
+              const order = orders.find(o => o.id === c.orderId);
+              const isOpen = expandedId === c.id;
+              return (
+                <React.Fragment key={c.id}>
+                  <tr style={{ borderTop: `1px solid ${C.line}` }}>
+                    <td style={{ ...td, fontFamily: fontMono }}>{c.id}</td>
+                    <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{c.orderId}</td>
+                    <td style={td}>{c.agent}</td>
+                    <td style={td}><StampBadge status={c.slipApproved ? 'verified' : 'pending'} /></td>
+                    <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(c.slipAmount)}</td>
+                    <td style={td}><Btn size="sm" variant="outline" icon={Eye} onClick={() => setExpandedId(isOpen ? null : c.id)}>{isOpen ? t('collapse') : t('detail')}</Btn></td>
+                  </tr>
+                  {isOpen && (
+                    <tr style={{ borderTop: `1px solid ${C.line}`, background: '#FBFAF7' }}>
+                      <td colSpan={6} style={{ padding: 18 }}>
+                        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 16 }}>
+                          <div style={{ flex: '1 1 200px' }}>
+                            <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.08em', color: C.wood, textTransform: 'uppercase', marginBottom: 8 }}>{t('colBankSlip')}</div>
+                            <SlipPreview url={c.slipUrl} type={c.slipType} label={t('bankSlipWord')} width={200} height={240} />
+                            <div style={{ fontSize: 11.5, color: C.sub, marginTop: 6 }}>{c.slipFile}</div>
+                            <div style={{ fontFamily: fontMono, fontSize: 13, fontWeight: 700, color: C.wood, marginTop: 4 }}>{RM(c.slipAmount)}</div>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                              {c.slipUrl && <a href={c.slipUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}><Btn size="sm" variant="outline" icon={FileText}>{t('downloadSlip')}</Btn></a>}
+                              {!c.slipApproved && <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={() => approveSlip(c)}>{t('approveSlip')}</Btn>}
+                            </div>
+                          </div>
+                          <div style={{ flex: '2 1 320px' }}>
+                            {order ? <AdminOrderDetail order={order} /> : <div style={{ fontSize: 12.5, color: C.sub }}>{t('orderNotFound')}</div>}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -2777,6 +2934,7 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
     leader: [{ id: 'home', label: t('nav_team_overview'), icon: LayoutDashboard }, { id: 'history', label: t('nav_history'), icon: Clock }],
     admin: [{ id: 'home', label: t('nav_pending_so'), icon: LayoutDashboard }],
     finance: [{ id: 'home', label: t('nav_finance_console'), icon: LayoutDashboard }],
+    account: [{ id: 'home', label: t('nav_bank_slips'), icon: LayoutDashboard }],
   };
 
   return (
@@ -2797,6 +2955,7 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
           {user.role === 'leader' && view === 'history' && <SalesHistory orders={orders.filter(o => o.team === user.team)} claims={claims.filter(c => c.team === user.team)} showAgent />}
           {user.role === 'admin' && <AdminDashboard orders={orders} setOrders={setOrders} items={items} setItems={setItems} claims={claims} />}
           {user.role === 'finance' && <FinanceDashboard orders={orders} claims={claims} setClaims={setClaims} items={items} setItems={setItems} accounts={accounts} setAccounts={setAccounts} />}
+          {user.role === 'account' && <AccountDashboard orders={orders} claims={claims} setClaims={setClaims} setOrders={setOrders} />}
         </Shell>
       )}
     </div>

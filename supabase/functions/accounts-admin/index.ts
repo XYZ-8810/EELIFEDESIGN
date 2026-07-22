@@ -60,6 +60,14 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    if (action === 'updateTeam') {
+      const { userId, team } = body;
+      if (!userId || !team) return new Response(JSON.stringify({ error: 'userId 和 team 是必填的' }), { status: 400, headers: corsHeaders });
+      const { error } = await supabaseAdmin.from('profiles').update({ team }).eq('id', userId);
+      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     return new Response(JSON.stringify({ error: '未知的 action' }), { status: 400, headers: corsHeaders });
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders });
