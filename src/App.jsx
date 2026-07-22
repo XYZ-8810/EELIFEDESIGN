@@ -267,6 +267,7 @@ const STRINGS = {
   billPaymentExplainSalesman: { zh: 'Total Bill = 这笔订单的总价；Total Payment = 水单上收到的金额', en: 'Total Bill = this order\u2019s price; Total Payment = the amount shown on the bank slip' },
   billPaymentExplainOrderForm: { zh: 'Total Bill 是依商品目录价格自动算出，不能更改；Total Payment 是这笔订单实际预计收到的金额，可以逐项调整（比如有议价）', en: 'Total Bill is calculated from the product catalog and cannot be changed; Total Payment is the amount actually expected to be received for this order, adjustable per item (e.g. for negotiated pricing)' },
   lineAdjustableNote: { zh: '可调整', en: 'adjustable' },
+  slipAmountPlaceholder: { zh: '请输入水单上显示的实际金额', en: 'Enter the actual amount shown on the slip' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
   tabAccounts: { zh: '账号管理', en: 'Account Management' },
@@ -1824,7 +1825,7 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
                     const url = await uploadToDrive(f, 'bank_slip');
                     setSlipFile(f.name); setSlipExt(ext);
                     setSlipUrl(url); setSlipType(f.type);
-                    setTransferOk(true); setSlipAmount(String(order.total + 100));
+                    setTransferOk(true); setSlipAmount('');
                   } catch (err) {
                     alert(err.message);
                   }
@@ -1841,7 +1842,7 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
               {t('billPaymentExplainSalesman')}
             </div>
             <Field label={t('paymentAmountLabel')}>
-              <input type="number" style={inputStyle} value={slipAmount} onChange={e => setSlipAmount(e.target.value)} />
+              <input type="number" style={inputStyle} value={slipAmount} onChange={e => setSlipAmount(e.target.value)} placeholder={t('slipAmountPlaceholder')} />
             </Field>
             <div style={{ background: C.woodTint, borderRadius: 8, padding: '12px 14px', fontFamily: fontMono, fontSize: 13 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{t('paymentAmountRow')}</span><span>{RM(slipAmount || 0)}</span></div>
@@ -1855,7 +1856,7 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
         <Btn variant="outline" icon={ChevronLeft} onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1}>{t('prev')}</Btn>
         {step < 4 && <Btn icon={ChevronRight} onClick={() => setStep(s => s + 1)} disabled={(step === 1 && !orderId) || (step === 3 && (!slipFile || uploadingSlip))}>{t('next')}</Btn>}
-        {step === 4 && <Btn icon={CheckCircle2} onClick={submitClaim}>{t('submitToFinance')}</Btn>}
+        {step === 4 && <Btn icon={CheckCircle2} disabled={!slipAmount || Number(slipAmount) <= 0} onClick={submitClaim}>{t('submitToFinance')}</Btn>}
       </div>
     </div>
   );
