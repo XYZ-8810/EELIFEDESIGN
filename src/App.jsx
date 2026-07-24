@@ -273,6 +273,9 @@ const STRINGS = {
   qtyColShort: { zh: '数量', en: 'Qty' },
   originalPriceCol: { zh: 'Original Price', en: 'Original Price' },
   paymentPriceCol: { zh: 'Payment Price', en: 'Payment Price' },
+  nav_orders: { zh: 'Orders', en: 'Orders' },
+  allOrdersTitle: { zh: '我的所有订单', en: 'All My Orders' },
+  showMoreRows: { zh: '往下滑动查看更多', en: 'Scroll down for more' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
   tabAccounts: { zh: '账号管理', en: 'Account Management' },
@@ -1134,7 +1137,7 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
       {searchable && (
         <OrderSearchBar query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} showClaimFilter={!!claims} />
       )}
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: sorted.length > 10 ? 520 : undefined }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
           <thead>
             <tr style={{ background: C.woodTint }}>
@@ -1260,17 +1263,14 @@ function SalesHistory({ orders, claims, showAgent = false, currentUser, setOrder
 }
 
 /* ============================== Salesman ============================== */
-function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, accounts }) {
+function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, accounts, page = 'home' }) {
   const { t } = useLang();
   const { teams } = useTeamsCtx();
-  const [view, setView] = useState('home');
+  const [subView, setSubView] = useState('home');
   const [editingOrder, setEditingOrder] = useState(null);
   const team = teams[user.team];
   const myOrders = orders.filter(o => o.agent === user.name);
-  const teamOrders = orders.filter(o => o.team === user.team);
   const thisMonth = currentMonthKey();
-  const teamTotal = teamOrders.filter(o => o.status === 'so_opened' && monthKey(o.date) === thisMonth).reduce((s, o) => s + o.total, 0);
-  const teamMemberCount = accounts.filter(a => a.role === 'salesman' && a.team === user.team).length;
 
   const mySoOrders = myOrders.filter(o => o.status === 'so_opened' && monthKey(o.date) === thisMonth);
   const myClaims = claims.filter(c => c.agent === user.name);
@@ -1278,59 +1278,64 @@ function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, 
   const incompleteSales = mySoOrders.filter(o => !claimedOrderIds.has(o.id));
   const completedSales = mySoOrders.filter(o => claimedOrderIds.has(o.id));
 
-  if (view === 'newOrder') return <OrderForm user={user} items={items} accounts={accounts} onCancel={() => setView('home')} onSubmit={o => { setOrders(prev => [o, ...prev]); setView('home'); }} />;
-  if (view === 'editOrder' && editingOrder) return (
+  if (subView === 'newOrder') return <OrderForm user={user} items={items} accounts={accounts} onCancel={() => setSubView('home')} onSubmit={o => { setOrders(prev => [o, ...prev]); setSubView('home'); }} />;
+  if (subView === 'editOrder' && editingOrder) return (
     <OrderForm
       user={user} items={items} accounts={accounts} editOrder={editingOrder}
-      onCancel={() => { setEditingOrder(null); setView('home'); }}
-      onSubmit={o => { setOrders(prev => prev.map(x => x.id === editingOrder.id ? o : x)); setEditingOrder(null); setView('home'); }}
+      onCancel={() => { setEditingOrder(null); setSubView('home'); }}
+      onSubmit={o => { setOrders(prev => prev.map(x => x.id === editingOrder.id ? o : x)); setEditingOrder(null); setSubView('home'); }}
     />
   );
-  if (view === 'claim') return <ClaimWizard user={user} orders={orders} setView={setView} onSubmit={claim => setClaims(prev => [claim, ...prev])} />;
+  if (subView === 'claim') return <ClaimWizard user={user} orders={orders} setView={setSubView} onSubmit={claim => setClaims(prev => [claim, ...prev])} />;
+
+  const actionButtons = (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <Btn variant="outline" icon={Receipt} onClick={() => setSubView('claim')}>{t('claimWizardTitle')}</Btn>
+      <Btn icon={Plus} onClick={() => setSubView('newOrder')}>{t('newOrder')}</Btn>
+    </div>
+  );
+
+  if (page === 'orders') {
+    return (
+      <div>
+        <SectionTitle eyebrow={team.name} title={t('myOrdersTitle')} right={actionButtons} />
+
+        <SectionTitle eyebrow="SO Issued" title={t('incompleteSalesTitle')} />
+        <div style={{ marginBottom: 24 }}>
+          {incompleteSales.length === 0 ? (
+            <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noIncompleteSales')}</div>
+          ) : <OrderTable orders={incompleteSales} showAgent={false} currentUser={user} setOrders={setOrders} />}
+        </div>
+
+        <SectionTitle eyebrow="SO Issued" title={t('completedSalesTitle')} />
+        <div style={{ marginBottom: 24 }}>
+          {completedSales.length === 0 ? (
+            <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noCompletedSales')}</div>
+          ) : <OrderTable orders={completedSales} showAgent={false} currentUser={user} setOrders={setOrders} />}
+        </div>
+
+        <SectionTitle eyebrow="My Orders" title={t('allOrdersTitle')} />
+        <OrderTable orders={myOrders} claims={claims} showAgent={false} currentUser={user} setOrders={setOrders} actions={o => {
+          if (o.status === 'so_rejected') return <Btn size="sm" variant="outline" icon={Edit3} onClick={() => { setEditingOrder(o); setSubView('editOrder'); }}>{t('editResubmit')}</Btn>;
+          if (o.status === 'so_opened') return <Btn size="sm" variant="outline" icon={RefreshCw} onClick={() => { setEditingOrder(o); setSubView('editOrder'); }}>{t('changeModel')}</Btn>;
+          return null;
+        }} />
+      </div>
+    );
+  }
+
+  const claimedTotal = completedSales.reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
+  const unclaimedTotal = incompleteSales.reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
+  const soTotal = mySoOrders.reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
 
   return (
     <div>
-      <SectionTitle eyebrow={team.name} title={`${t('welcomeBack')}，${user.name.split(' ')[0]}`} right={
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <Btn variant="outline" icon={Receipt} onClick={() => setView('claim')}>{t('claimWizardTitle')}</Btn>
-          <Btn icon={Plus} onClick={() => setView('newOrder')}>{t('newOrder')}</Btn>
-        </div>
-      } />
-      <div style={{ display: 'flex', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
-        <StatCard label={t('statTeamTotal')} value={RM(teamTotal)} sub={`${team.name} · ${teamMemberCount} ${t('salesmenCountSuffix')}`} icon={TrendingUp} />
-        <StatCard label={t('statMyOrders')} value={myOrders.length} sub={`${myOrders.filter(o => o.status === 'pending_so').length} ${t('statPendingSoCount')}`} icon={ClipboardList} />
-        <StatCard label={t('statMyClaims')} value={t('viewWord')} sub={t('clickToStart')} color={C.teal} icon={Receipt} />
-      </div>
+      <SectionTitle eyebrow={team.name} title={`${t('welcomeBack')}，${user.name.split(' ')[0]}`} right={actionButtons} />
       <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
-        <StatCard label={t('soIssuedSalesLabel')} value={mySoOrders.length} sub={RM(mySoOrders.reduce((s, o) => s + o.total, 0))} icon={FileCheck2} />
-        <StatCard label={t('incompleteSalesLabel')} value={incompleteSales.length} sub={RM(incompleteSales.reduce((s, o) => s + o.total, 0))} color={C.ochre} icon={Clock} />
-        <StatCard label={t('completedSalesLabel')} value={completedSales.length} sub={RM(completedSales.reduce((s, o) => s + o.total, 0))} color={C.teal} icon={CheckCircle2} />
+        <StatCard label={t('soIssuedSalesLabel')} value={mySoOrders.length} sub={RM(soTotal)} icon={FileCheck2} />
+        <StatCard label={t('incompleteSalesLabel')} value={incompleteSales.length} sub={RM(unclaimedTotal)} color={C.ochre} icon={Clock} />
+        <StatCard label={t('completedSalesLabel')} value={completedSales.length} sub={RM(claimedTotal)} color={C.teal} icon={CheckCircle2} />
       </div>
-      <SectionTitle eyebrow="Team Result" title={t('teamResultTitle')} />
-      <div style={{ marginBottom: 24 }}><TeamChart team={team} orders={orders} accounts={accounts} /></div>
-
-      <SectionTitle eyebrow="SO Issued" title={t('incompleteSalesTitle')} right={
-        <Btn size="sm" variant="outline" icon={Receipt} onClick={() => setView('claim')}>{t('claimWizardTitle')}</Btn>
-      } />
-      <div style={{ marginBottom: 24 }}>
-        {incompleteSales.length === 0 ? (
-          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noIncompleteSales')}</div>
-        ) : <OrderTable orders={incompleteSales} showAgent={false} currentUser={user} setOrders={setOrders} />}
-      </div>
-
-      <SectionTitle eyebrow="SO Issued" title={t('completedSalesTitle')} />
-      <div style={{ marginBottom: 24 }}>
-        {completedSales.length === 0 ? (
-          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>{t('noCompletedSales')}</div>
-        ) : <OrderTable orders={completedSales} showAgent={false} currentUser={user} setOrders={setOrders} />}
-      </div>
-
-      <SectionTitle eyebrow="My Orders" title={t('myOrdersTitle')} />
-      <OrderTable orders={myOrders} claims={claims} showAgent={false} currentUser={user} setOrders={setOrders} actions={o => {
-        if (o.status === 'so_rejected') return <Btn size="sm" variant="outline" icon={Edit3} onClick={() => { setEditingOrder(o); setView('editOrder'); }}>{t('editResubmit')}</Btn>;
-        if (o.status === 'so_opened') return <Btn size="sm" variant="outline" icon={RefreshCw} onClick={() => { setEditingOrder(o); setView('editOrder'); }}>{t('changeModel')}</Btn>;
-        return null;
-      }} />
     </div>
   );
 }
@@ -2259,7 +2264,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
         <StatCard label={t('statSoThisMonth')} value={opened.length} color={C.teal} icon={FileCheck2} />
         <StatCard label={t('statPendingLogistics')} value={pendingLogistics} color={C.brick} icon={Truck} />
       </div>
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 28 }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 28, maxHeight: pendingFiltered.length > 10 ? 520 : undefined }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
           <thead><tr style={{ background: C.woodTint }}>
             <th style={th}>{t('orderIdCol')}</th><th style={th}>{t('customerCol')}</th><th style={th}>{t('agentCol')}</th><th style={th}>POS Code</th><th style={th}>{t('amountCol')}</th><th style={th}></th>
@@ -2339,7 +2344,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
       </div>
 
       <SectionTitle eyebrow="ORDER" title={t('archivedOrders')} />
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: openedSorted.length > 10 ? 520 : undefined }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
           <thead><tr style={{ background: C.woodTint }}>
             <th style={th}>{t('orderIdCol')}</th><th style={th}>{t('customerCol')}</th><th style={th}>{t('agentCol')}</th><th style={th}>{t('amountCol')}</th><th style={th}>{t('soFileCol')}</th><th style={th}></th>
@@ -2386,7 +2391,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
       {rejectedOrders.length > 0 && (
         <>
           <SectionTitle eyebrow="Rejected" title={t('rejectedOrdersTitle')} />
-          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: rejectedFiltered.length > 10 ? 520 : undefined }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
               <thead><tr style={{ background: C.woodTint }}>
                 <th style={th}>{t('orderIdCol')}</th><th style={th}>{t('customerCol')}</th><th style={th}>{t('agentCol')}</th><th style={th}>{t('rejectReasonCol')}</th><th style={th}></th>
@@ -2688,7 +2693,7 @@ function AccountDashboard({ orders, claims, setClaims, setOrders }) {
           }}>{{ all: t('filterAll'), pending: t('slipPendingTag'), approved: t('slipApprovedTag') }[f]}</button>
         ))}
       </div>
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto' }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', maxHeight: filtered.length > 10 ? 520 : undefined }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
           <thead><tr style={{ background: C.woodTint }}>
             <th style={th}>{t('colClaimId')}</th><th style={th}>{t('colOrder')}</th><th style={th}>{t('agentCol')}</th>
@@ -2792,7 +2797,7 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
               }}>{{ all: t('filterAll'), pending: t('filterPending'), verified: t('filterVerified'), rejected: t('filterRejected') }[f]}</button>
             ))}
           </div>
-          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: filtered.length > 10 ? 520 : undefined }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
               <thead><tr style={{ background: C.woodTint }}>
                 <th style={th}>{t('colClaimId')}</th><th style={th}>{t('colOrder')}</th><th style={th}>{t('agentCol')}</th><th style={th}>{t('step2')}</th><th style={th}>{t('colSlipCheck')}</th><th style={th}>{t('colDriveFile')}</th><th style={th}>{t('totalBillLabel')}</th><th style={th}>{t('totalPaymentLabel')}</th><th style={th}>{t('differenceLabel')}</th><th style={th}>{t('statusCol')}</th><th style={th}></th>
@@ -3058,7 +3063,7 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
   // 新增/重设密码/删除都在 AccountsManager 里直接、个别地写入数据库
 
   const navMap = {
-    salesman: [{ id: 'home', label: t('nav_dashboard'), icon: LayoutDashboard }, { id: 'history', label: t('nav_history'), icon: Clock }],
+    salesman: [{ id: 'home', label: t('nav_dashboard'), icon: LayoutDashboard }, { id: 'orders', label: t('nav_orders'), icon: ClipboardList }, { id: 'history', label: t('nav_history'), icon: Clock }],
     leader: [{ id: 'home', label: t('nav_team_overview'), icon: LayoutDashboard }, { id: 'history', label: t('nav_history'), icon: Clock }],
     admin: [{ id: 'home', label: t('nav_pending_so'), icon: LayoutDashboard }],
     finance: [{ id: 'home', label: t('nav_finance_console'), icon: LayoutDashboard }],
@@ -3077,7 +3082,8 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
         <LoginScreen accounts={accounts} onLogin={(u) => { setUser(u); setView('home'); }} />
       ) : (
         <Shell user={user} view={view} setView={setView} navItems={navMap[user.role]} onLogout={() => { supabase.auth.signOut(); setUser(null); }} accounts={accounts} setAccounts={setAccounts}>
-          {user.role === 'salesman' && view === 'home' && <SalesmanDashboard user={user} orders={orders} items={items} claims={claims} setOrders={setOrders} setClaims={setClaims} accounts={accounts} />}
+          {user.role === 'salesman' && view === 'home' && <SalesmanDashboard user={user} orders={orders} items={items} claims={claims} setOrders={setOrders} setClaims={setClaims} accounts={accounts} page="home" />}
+          {user.role === 'salesman' && view === 'orders' && <SalesmanDashboard user={user} orders={orders} items={items} claims={claims} setOrders={setOrders} setClaims={setClaims} accounts={accounts} page="orders" />}
           {user.role === 'salesman' && view === 'history' && <SalesHistory orders={orders.filter(o => o.agent === user.name)} claims={claims.filter(c => c.agent === user.name)} currentUser={user} setOrders={setOrders} />}
           {user.role === 'leader' && view === 'home' && <LeaderDashboard user={user} orders={orders} claims={claims} accounts={accounts} />}
           {user.role === 'leader' && view === 'history' && <SalesHistory orders={orders.filter(o => o.team === user.team)} claims={claims.filter(c => c.team === user.team)} showAgent />}
