@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, createContext, useContext } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from './supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import {
@@ -6,7 +7,7 @@ import {
   UploadCloud, CheckCircle2, XCircle, Clock, ChevronRight, ChevronLeft, LogOut,
   Plus, Search, Edit3, Trash2, ArrowLeft, Stamp, Building2, Wallet,
   ShieldCheck, AlertTriangle, TrendingUp, FileCheck2, Inbox,
-  Lock, Fingerprint, Loader2, Eye, EyeOff, MessageCircle, Truck, MapPin, Phone, FileText, FolderOpen, RefreshCw
+  Lock, Fingerprint, Loader2, Eye, EyeOff, MessageCircle, Truck, MapPin, Phone, FileText, FolderOpen, RefreshCw, Download
 } from 'lucide-react';
 
 /* ============================== 视觉token ============================== */
@@ -276,6 +277,23 @@ const STRINGS = {
   nav_orders: { zh: 'Orders', en: 'Orders' },
   allOrdersTitle: { zh: '我的所有订单', en: 'All My Orders' },
   showMoreRows: { zh: '往下滑动查看更多', en: 'Scroll down for more' },
+  exportSalesTitle: { zh: '汇出销售报表', en: 'Export Sales Report' },
+  exportSalesDesc: { zh: '选一个月份，把那个月已开SO的订单汇出成Excel档案', en: 'Pick a month to export that month\u2019s SO-issued orders as an Excel file' },
+  exportMonthLabel: { zh: '选择月份', en: 'Select Month' },
+  exportButton: { zh: '汇出 Excel', en: 'Export Excel' },
+  noOrdersToExport: { zh: '这个月没有已开SO的订单可以汇出', en: 'No SO-issued orders to export for this month' },
+  exportColOrderId: { zh: '订单编号', en: 'Order ID' },
+  exportColDate: { zh: '提交时间', en: 'Submitted At' },
+  exportColSoNumber: { zh: 'SO编号', en: 'SO Number' },
+  exportColCustomer: { zh: '客户', en: 'Customer' },
+  exportColPoscode: { zh: 'Poscode', en: 'Poscode' },
+  exportColAgent: { zh: '销售员', en: 'Salesman' },
+  exportColTeam: { zh: '团队', en: 'Team' },
+  exportColItems: { zh: '品项', en: 'Items' },
+  exportColTotalBill: { zh: 'Total Bill', en: 'Total Bill' },
+  exportColTotalPayment: { zh: 'Total Payment', en: 'Total Payment' },
+  exportColDifference: { zh: 'Difference', en: 'Difference' },
+  exportColPaymentReceived: { zh: 'Payment已收到', en: 'Payment Received' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
   tabAccounts: { zh: '账号管理', en: 'Account Management' },
@@ -543,6 +561,36 @@ const nowDateTime = () => {
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
+
+function exportOrdersToExcel(orders, teams, monthKeyStr, t) {
+  const rows = orders.map(o => {
+    const bill = o.total || 0;
+    const payment = o.amount != null ? o.amount : o.total;
+    return {
+      [t('exportColOrderId')]: o.id,
+      [t('exportColDate')]: o.date || '',
+      [t('exportColSoNumber')]: o.soNumber || '',
+      [t('exportColCustomer')]: o.customer,
+      [t('exportColPoscode')]: o.poscode || '',
+      [t('exportColAgent')]: o.agent,
+      [t('exportColTeam')]: teams[o.team]?.name || o.team || '',
+      [t('exportColItems')]: (o.items || []).map(it => `${it.code} x${it.qty}`).join(', '),
+      [t('exportColTotalBill')]: bill,
+      [t('exportColTotalPayment')]: payment,
+      [t('exportColDifference')]: payment - bill,
+      [t('exportColPaymentReceived')]: o.paymentReceived ? 'Yes' : 'No',
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 10 },
+    { wch: 14 }, { wch: 16 }, { wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, monthKeyStr);
+  XLSX.writeFile(wb, `sales_${monthKeyStr}.xlsx`);
+}
+
 const PAYMENT_METHODS = [
   { code: 'bank', key: 'payMethodBank' },
   { code: 'cash', key: 'payMethodCash' },
@@ -2746,11 +2794,12 @@ function AccountDashboard({ orders, claims, setClaims, setOrders }) {
 }
 
 function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts, setAccounts }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { teams } = useTeamsCtx();
   const [tab, setTab] = useState('commission');
   const [filter, setFilter] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
+  const [exportMonth, setExportMonth] = useState(currentMonthKey());
 
   const approvedClaims = claims.filter(c => c.slipApproved);
   const filtered = filter === 'all' ? approvedClaims : approvedClaims.filter(c => c.status === filter);
@@ -2763,6 +2812,12 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
   const [expandedTeam, setExpandedTeam] = useState(null);
 
   const setStatus = (id, status) => setClaims(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+
+  const doExport = () => {
+    const monthOrders = orders.filter(o => o.status === 'so_opened' && monthKey(o.date) === exportMonth);
+    if (monthOrders.length === 0) { alert(t('noOrdersToExport')); return; }
+    exportOrdersToExcel(monthOrders, teams, exportMonth, t);
+  };
 
   return (
     <div>
@@ -2900,6 +2955,17 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
 
       {tab === 'sales' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ background: C.woodTint, border: `1px solid ${C.wood}`, borderRadius: 10, padding: 16 }}>
+            <div style={{ fontFamily: fontDisplay, fontSize: 16, fontWeight: 600, color: C.ink, marginBottom: 2 }}>{t('exportSalesTitle')}</div>
+            <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{t('exportSalesDesc')}</div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontFamily: fontBody, fontSize: 12, color: C.sub, marginBottom: 6, fontWeight: 600 }}>{t('exportMonthLabel')}</div>
+                <input type="month" value={exportMonth} onChange={e => setExportMonth(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
+              </div>
+              <Btn icon={Download} onClick={doExport}>{t('exportButton')}</Btn>
+            </div>
+          </div>
           {teamSales.map((row, idx) => (
             <div key={row.team}>
               <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
