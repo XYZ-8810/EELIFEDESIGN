@@ -268,6 +268,11 @@ const STRINGS = {
   billPaymentExplainOrderForm: { zh: 'Total Bill 是依商品目录价格自动算出，不能更改；Total Payment 是这笔订单实际预计收到的金额，可以逐项调整（比如有议价）', en: 'Total Bill is calculated from the product catalog and cannot be changed; Total Payment is the amount actually expected to be received for this order, adjustable per item (e.g. for negotiated pricing)' },
   lineAdjustableNote: { zh: '可调整', en: 'adjustable' },
   slipAmountPlaceholder: { zh: '请输入水单上显示的实际金额', en: 'Enter the actual amount shown on the slip' },
+  itemIdCol: { zh: '商品编号', en: 'Item ID' },
+  itemNameCol: { zh: '商品名称', en: 'Item Name' },
+  qtyColShort: { zh: '数量', en: 'Qty' },
+  originalPriceCol: { zh: 'Original Price', en: 'Original Price' },
+  paymentPriceCol: { zh: 'Payment Price', en: 'Payment Price' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
   tabAccounts: { zh: '账号管理', en: 'Account Management' },
@@ -1171,7 +1176,7 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
                 {showAgent && <td style={td}>{o.agent}</td>}
                 <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{o.poscode}</td>
                 <td style={{ ...td, fontSize: 12, color: C.sub }}>{o.items.map(it => it.code).join(', ')}</td>
-                <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.total)}</td>
+                <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.amount != null ? o.amount : o.total)}</td>
                 <td style={td}><StampBadge status={o.status} /></td>
                 <td style={td}>
                   {o.soFileUrl ? (
@@ -1195,6 +1200,7 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
                       canResolveIssue={!!(currentUser && currentUser.role === 'salesman' && o.agent === currentUser.name)}
                       onResolveIssue={file => resolveIssue(o, file)}
                       resolvingIssue={resolvingIssueFor === o.id}
+                      showBreakdown={!!(currentUser && currentUser.role === 'finance')}
                     />
                   </td>
                 </tr>
@@ -1537,7 +1543,7 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
 
     const orderItems = lines.map(l => {
       const { item, addOns, paymentAmount } = lineDetail(l);
-      return { code: item.code, qty: l.qty, price: item.price, paymentAmount, addOns: addOns.map(a => ({ code: a.code, name: a.name, price: a.price })) };
+      return { code: item.code, name: item.name, qty: l.qty, price: item.price, paymentAmount, addOns: addOns.map(a => ({ code: a.code, name: a.name, price: a.price })) };
     });
 
     onSubmit({
@@ -1791,7 +1797,7 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
                 <button key={o.id} onClick={() => setOrderId(o.id)}
                   style={{ textAlign: 'left', border: `1.5px solid ${orderId === o.id ? C.wood : C.line}`, background: orderId === o.id ? C.woodTint : '#fff', borderRadius: 8, padding: '10px 14px', cursor: 'pointer' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: fontMono, fontSize: 12.5 }}>
-                    <span>{o.id} · {o.soNumber}</span><b>{RM(o.total)}</b>
+                    <span>{o.id} · {o.soNumber}</span><b>{RM(o.amount != null ? o.amount : o.total)}</b>
                   </div>
                   <div style={{ fontSize: 12.5, color: C.sub, marginTop: 2 }}>{o.customer} · {o.items.map(it => it.code).join(', ')}</div>
                 </button>
@@ -1924,7 +1930,64 @@ function DeliveryProgress({ order }) {
   );
 }
 
-function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onSetIssueCheck, onApproveResolution, canResolveIssue, onResolveIssue, resolvingIssue }) {
+const receiptTh = { textAlign: 'left', padding: '7px 10px', fontSize: 10.5, letterSpacing: '0.03em', color: C.wood, fontWeight: 700, textTransform: 'uppercase' };
+const receiptTd = { padding: '8px 10px', color: C.ink, fontSize: 12, verticalAlign: 'top' };
+
+function ItemsReceipt({ items, showBreakdown }) {
+  const { t } = useLang();
+  if (!items || items.length === 0) return null;
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', margin: '4px 0 10px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody }}>
+        <thead>
+          <tr style={{ background: C.woodTint }}>
+            <th style={receiptTh}>{t('itemIdCol')}</th>
+            <th style={receiptTh}>{t('itemNameCol')}</th>
+            <th style={receiptTh}>{t('qtyColShort')}</th>
+            {showBreakdown ? (
+              <>
+                <th style={receiptTh}>{t('originalPriceCol')}</th>
+                <th style={receiptTh}>{t('paymentPriceCol')}</th>
+                <th style={receiptTh}>{t('differenceLabel')}</th>
+              </>
+            ) : (
+              <th style={receiptTh}>{t('amountCol')}</th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => {
+            const addOnsTotal = (it.addOns || []).reduce((s, a) => s + a.price, 0);
+            const originalLineTotal = (it.price + addOnsTotal) * it.qty;
+            const paymentLineTotal = it.paymentAmount != null ? it.paymentAmount : originalLineTotal;
+            const diff = paymentLineTotal - originalLineTotal;
+            return (
+              <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td style={{ ...receiptTd, fontFamily: fontMono }}>{it.code}</td>
+                <td style={receiptTd}>
+                  {it.name || it.code}
+                  {it.addOns && it.addOns.length > 0 && <div style={{ fontSize: 10.5, color: C.sub, marginTop: 2 }}>+ {it.addOns.map(a => a.name).join(', ')}</div>}
+                </td>
+                <td style={receiptTd}>{it.qty}</td>
+                {showBreakdown ? (
+                  <>
+                    <td style={{ ...receiptTd, fontFamily: fontMono }}>{RM(originalLineTotal)}</td>
+                    <td style={{ ...receiptTd, fontFamily: fontMono }}>{RM(paymentLineTotal)}</td>
+                    <td style={{ ...receiptTd, fontFamily: fontMono, fontWeight: 700, color: diff < 0 ? C.brick : diff > 0 ? C.teal : C.sub }}>{RM(diff)}</td>
+                  </>
+                ) : (
+                  <td style={{ ...receiptTd, fontFamily: fontMono, fontWeight: 600 }}>{RM(paymentLineTotal)}</td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onSetIssueCheck, onApproveResolution, canResolveIssue, onResolveIssue, resolvingIssue, showBreakdown }) {
   const { t } = useLang();
   const [editingIssue, setEditingIssue] = useState(false);
   const [issueChecked, setIssueCheckedInput] = useState(!!order.hasIssue);
@@ -2015,7 +2078,8 @@ function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDe
           <div><b>Poscode：</b>{order.poscode}　<b>{t('phoneColonPlain')}</b>{order.phone1 || '—'}{order.phone2 ? ` / ${order.phone2}` : ''}</div>
           <div><b>{t('submittedBy')}</b>{order.agent}　<b>Sales Executive：</b>{order.salesExecutive || order.agent}</div>
           <div><b>{t('salesmanPhoneLabel')}</b>{order.salesmanPhone || '—'}</div>
-          <div><b>{t('itemsLabel')}</b>{order.items.map(it => `${it.code} x${it.qty}${it.addOns && it.addOns.length ? `（+${it.addOns.map(a => a.name).join(', ')}）` : ''}`).join('；')}</div>
+          <div style={{ marginBottom: 4 }}><b>{t('itemsLabel')}</b></div>
+          <ItemsReceipt items={order.items} showBreakdown={showBreakdown} />
           <div><b>{t('orderTotalLabel')}</b>{RM(order.total)}</div>
           {order.status === 'so_opened' && (
             <div>
@@ -2203,7 +2267,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                   <td style={td}>{o.customer}{o.deliveryUrgent && <div style={{ marginTop: 3 }}><StampBadge status={o.logisticStatus === 'approved' ? 'verified' : o.logisticStatus === 'rejected' ? 'rejected' : 'pending'} /></div>}</td>
                   <td style={td}>{o.agent}</td>
                   <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{o.poscode}</td>
-                  <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.total)}</td>
+                  <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.amount != null ? o.amount : o.total)}</td>
                   <td style={td}>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <Btn size="sm" variant="outline" icon={Eye} onClick={() => toggleDetail(o.id)}>{detailId === o.id ? t('collapse') : t('detail')}</Btn>
@@ -2289,7 +2353,7 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
                   </td>
                   <td style={td}>{o.customer}{o.deliveryUrgent && <div style={{ marginTop: 3 }}><StampBadge status={o.logisticStatus === 'approved' ? 'verified' : o.logisticStatus === 'rejected' ? 'rejected' : 'pending'} /></div>}</td>
                   <td style={td}>{o.agent}</td>
-                  <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.total)}</td>
+                  <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(o.amount != null ? o.amount : o.total)}</td>
                   <td style={td}>
                     {o.soFileUrl ? (
                       <a href={o.soFileUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.wood, fontWeight: 600, fontSize: 12.5, textDecoration: 'none' }}>
@@ -2703,7 +2767,7 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
 
       {tab === 'accounts' && <AccountsManager accounts={accounts} setAccounts={setAccounts} />}
 
-      {tab === 'orders' && <OrderTable orders={orders} claims={claims} />}
+      {tab === 'orders' && <OrderTable orders={orders} claims={claims} currentUser={{ role: 'finance' }} />}
 
       {tab === 'commission' && (
         <div>
@@ -2792,7 +2856,8 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
                                     <div><b>Alamat：</b>{order.alamat || '—'}</div>
                                     <div><b>Poscode：</b>{order.poscode}　<b>{t('phoneColonPlain')}</b>{order.phone1}{order.phone2 ? ` / ${order.phone2}` : ''}</div>
                                     <div><b>Sales Executive：</b>{order.salesExecutive || order.agent}　<b>{t('salesmanPhoneLabel')}</b>{order.salesmanPhone || '—'}</div>
-                                    <div><b>{t('itemsLabel')}</b>{order.items.map(it => `${it.code} x${it.qty}${it.addOns && it.addOns.length ? `（+${it.addOns.map(a => a.name).join(', ')}）` : ''}`).join('；')}</div>
+                                    <div style={{ marginBottom: 4 }}><b>{t('itemsLabel')}</b></div>
+                                    <ItemsReceipt items={order.items} showBreakdown={true} />
                                     <div><b>{t('orderTotalColonPlain')}</b>{RM(order.total)}</div>
                                     <div><b>{t('soNumberColon')}</b>{order.soNumber || '—'} {order.soFileUrl && <a href={order.soFileUrl} target="_blank" rel="noreferrer" style={{ color: C.wood, marginLeft: 6 }}>{t('viewSoPdf')}</a>}</div>
                                     {order.remark && <div><b>{t('remarkColonPlain')}</b>{order.remark}</div>}
