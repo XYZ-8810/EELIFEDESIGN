@@ -2080,7 +2080,14 @@ function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDe
           <div><b>{t('salesmanPhoneLabel')}</b>{order.salesmanPhone || '—'}</div>
           <div style={{ marginBottom: 4 }}><b>{t('itemsLabel')}</b></div>
           <ItemsReceipt items={order.items} showBreakdown={showBreakdown} />
-          <div><b>{t('orderTotalLabel')}</b>{RM(order.total)}</div>
+          <div><b>{t('totalBillLabel')}：</b>{RM(order.total)}</div>
+          <div><b>{t('totalPaymentLabel')}：</b>{RM(order.amount != null ? order.amount : order.total)}
+            {order.amount != null && order.amount !== order.total && (
+              <span style={{ marginLeft: 8, fontSize: 11.5, color: order.amount < order.total ? C.brick : C.teal, fontWeight: 700 }}>
+                ({order.amount < order.total ? '-' : '+'}{RM(Math.abs(order.amount - order.total))})
+              </span>
+            )}
+          </div>
           {order.status === 'so_opened' && (
             <div>
               <b>{t('paymentStatusLabel')}：</b>
@@ -2858,7 +2865,8 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
                                     <div><b>Sales Executive：</b>{order.salesExecutive || order.agent}　<b>{t('salesmanPhoneLabel')}</b>{order.salesmanPhone || '—'}</div>
                                     <div style={{ marginBottom: 4 }}><b>{t('itemsLabel')}</b></div>
                                     <ItemsReceipt items={order.items} showBreakdown={true} />
-                                    <div><b>{t('orderTotalColonPlain')}</b>{RM(order.total)}</div>
+                                    <div><b>{t('totalBillLabel')}：</b>{RM(order.total)}</div>
+                                    <div><b>{t('totalPaymentLabel')}：</b>{RM(order.amount != null ? order.amount : order.total)}</div>
                                     <div><b>{t('soNumberColon')}</b>{order.soNumber || '—'} {order.soFileUrl && <a href={order.soFileUrl} target="_blank" rel="noreferrer" style={{ color: C.wood, marginLeft: 6 }}>{t('viewSoPdf')}</a>}</div>
                                     {order.remark && <div><b>{t('remarkColonPlain')}</b>{order.remark}</div>}
                                     <div style={{ background: C.woodTint, borderRadius: 6, padding: '8px 10px', marginTop: 8, fontFamily: fontMono, fontSize: 12 }}>
