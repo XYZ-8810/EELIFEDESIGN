@@ -294,6 +294,10 @@ const STRINGS = {
   exportColTotalPayment: { zh: 'Total Payment', en: 'Total Payment' },
   exportColDifference: { zh: 'Difference', en: 'Difference' },
   exportColPaymentReceived: { zh: 'Payment已收到', en: 'Payment Received' },
+  mySalesChartTitle: { zh: '我的业绩总览', en: 'My Sales Overview' },
+  chartTotalSales: { zh: 'Total Sales', en: 'Total Sales' },
+  chartApprovedCommission: { zh: '已核实佣金', en: 'Approved Commission' },
+  chartNotClaimedYet: { zh: '未申请佣金', en: 'Not Claimed Yet' },
   exportColStatus: { zh: '状态', en: 'Status' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
@@ -1088,6 +1092,40 @@ function Shell({ user, view, setView, navItems, onLogout, accounts, setAccounts,
 }
 
 /* ============================== 团队业绩图 ============================== */
+function MySalesChart({ orders, claims, agentName, lang }) {
+  const { t } = useLang();
+  const myOrders = orders.filter(o => o.agent === agentName);
+  const myClaims = claims.filter(c => c.agent === agentName);
+  const claimedOrderIds = new Set(myClaims.map(c => c.orderId));
+  const approvedOrderIds = new Set(myClaims.filter(c => c.status === 'verified').map(c => c.orderId));
+
+  const totalSales = myOrders.reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
+  const approvedSales = myOrders.filter(o => approvedOrderIds.has(o.id)).reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
+  const notClaimedSales = myOrders.filter(o => o.status === 'so_opened' && !claimedOrderIds.has(o.id)).reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
+
+  const data = [
+    { name: t('chartTotalSales'), value: totalSales, fill: C.wood },
+    { name: t('chartApprovedCommission'), value: approvedSales, fill: C.teal },
+    { name: t('chartNotClaimedYet'), value: notClaimedSales, fill: C.ochre },
+  ];
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '18px 20px', height: 260 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
+          <CartesianGrid vertical={false} stroke={C.line} />
+          <XAxis dataKey="name" tick={{ fontFamily: fontBody, fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.line }} tickLine={false} />
+          <YAxis tick={{ fontFamily: fontMono, fontSize: 10.5, fill: C.sub }} axisLine={false} tickLine={false} tickFormatter={v => `${v / 1000}k`} />
+          <Tooltip formatter={v => RM(v)} contentStyle={{ fontFamily: fontBody, fontSize: 12.5, border: `1px solid ${C.line}`, borderRadius: 6 }} />
+          <Bar dataKey="value" radius={[5, 5, 0, 0]}>
+            {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 function TeamChart({ team, orders, accounts }) {
   const members = accounts.filter(a => a.role === 'salesman' && a.team === team.id).map(a => a.name);
   const thisMonth = currentMonthKey();
@@ -1398,6 +1436,8 @@ function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, 
         <StatCard label={t('incompleteSalesLabel')} value={incompleteSales.length} sub={RM(unclaimedTotal)} color={C.ochre} icon={Clock} />
         <StatCard label={t('completedSalesLabel')} value={completedSales.length} sub={RM(claimedTotal)} color={C.teal} icon={CheckCircle2} />
       </div>
+      <SectionTitle eyebrow="Overview" title={t('mySalesChartTitle')} />
+      <MySalesChart orders={orders} claims={claims} agentName={user.name} />
     </div>
   );
 }
