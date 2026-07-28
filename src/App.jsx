@@ -562,6 +562,17 @@ const nowDateTime = () => {
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
+// 产生「日期时间 + 随机字元」的编号：一眼看出建立日期时间，同时避免撞号
+const genTimeId = (prefix) => {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const datePart = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const timePart = `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 排除容易混淆的 0/O/1/I
+  let rand = '';
+  for (let i = 0; i < 3; i++) rand += chars[Math.floor(Math.random() * chars.length)];
+  return `${prefix}-${datePart}-${timePart}-${rand}`;
+};
 
 function exportOrdersToExcel(orders, teams, monthKeyStr, t) {
   const statusLabel = s => ({ pending_so: t('status_pending_so'), so_opened: t('status_so_opened'), so_rejected: t('status_so_rejected') }[s] || s);
@@ -1603,7 +1614,7 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
     });
 
     onSubmit({
-      id: editOrder ? editOrder.id : `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: editOrder ? editOrder.id : genTimeId('ORD'),
       customer: fullName, alamat, poscode, phone1, phone2,
       agent: user.name, team: user.team,
       salesExecutive, salesmanPhone,
@@ -1804,7 +1815,7 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
   const submitClaim = () => {
     if (!order) return;
     onSubmit({
-      id: `CM-${Math.floor(3000 + Math.random() * 900)}`,
+      id: genTimeId('CM'),
       orderId: order.id,
       agent: user.name,
       team: user.team,
