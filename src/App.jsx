@@ -278,7 +278,7 @@ const STRINGS = {
   allOrdersTitle: { zh: '我的所有订单', en: 'All My Orders' },
   showMoreRows: { zh: '往下滑动查看更多', en: 'Scroll down for more' },
   exportSalesTitle: { zh: '汇出销售报表', en: 'Export Sales Report' },
-  exportSalesDesc: { zh: '选一个月份，把那个月已开SO的订单汇出成Excel档案', en: 'Pick a month to export that month\u2019s SO-issued orders as an Excel file' },
+  exportSalesDesc: { zh: '选一个月份，把那个月所有订单（不限状态）汇出成Excel档案，每笔订单会附上状态栏位', en: 'Pick a month to export all that month\u2019s orders (any status) as an Excel file, with a status column on each row' },
   exportMonthLabel: { zh: '选择月份', en: 'Select Month' },
   exportButton: { zh: '汇出 Excel', en: 'Export Excel' },
   noOrdersToExport: { zh: '这个月没有已开SO的订单可以汇出', en: 'No SO-issued orders to export for this month' },
@@ -294,6 +294,7 @@ const STRINGS = {
   exportColTotalPayment: { zh: 'Total Payment', en: 'Total Payment' },
   exportColDifference: { zh: 'Difference', en: 'Difference' },
   exportColPaymentReceived: { zh: 'Payment已收到', en: 'Payment Received' },
+  exportColStatus: { zh: '状态', en: 'Status' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
   tabAccounts: { zh: '账号管理', en: 'Account Management' },
@@ -563,12 +564,14 @@ const nowDateTime = () => {
 };
 
 function exportOrdersToExcel(orders, teams, monthKeyStr, t) {
+  const statusLabel = s => ({ pending_so: t('status_pending_so'), so_opened: t('status_so_opened'), so_rejected: t('status_so_rejected') }[s] || s);
   const rows = orders.map(o => {
     const bill = o.total || 0;
     const payment = o.amount != null ? o.amount : o.total;
     return {
       [t('exportColOrderId')]: o.id,
       [t('exportColDate')]: o.date || '',
+      [t('exportColStatus')]: statusLabel(o.status),
       [t('exportColSoNumber')]: o.soNumber || '',
       [t('exportColCustomer')]: o.customer,
       [t('exportColPoscode')]: o.poscode || '',
@@ -583,7 +586,7 @@ function exportOrdersToExcel(orders, teams, monthKeyStr, t) {
   });
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
-    { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 10 },
+    { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 10 },
     { wch: 14 }, { wch: 16 }, { wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
   ];
   const wb = XLSX.utils.book_new();
@@ -2814,7 +2817,7 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
   const setStatus = (id, status) => setClaims(prev => prev.map(c => c.id === id ? { ...c, status } : c));
 
   const doExport = () => {
-    const monthOrders = orders.filter(o => o.status === 'so_opened' && monthKey(o.date) === exportMonth);
+    const monthOrders = orders.filter(o => monthKey(o.date) === exportMonth);
     if (monthOrders.length === 0) { alert(t('noOrdersToExport')); return; }
     exportOrdersToExcel(monthOrders, teams, exportMonth, t);
   };
