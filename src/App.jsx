@@ -1224,6 +1224,9 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
     setResolvingIssueFor(order.id);
     try {
       const url = await uploadToDrive(file, 'delivery_issue_proof');
+      const fields = { issue_resolved: true, issue_proof_file: file.name, issue_proof_url: url, issue_proof_type: file.type };
+      const { error } = await supabase.from('orders').update(fields).eq('id', order.id);
+      if (error) throw error;
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, issueResolved: true, issueProofFile: file.name, issueProofUrl: url, issueProofType: file.type } : o));
     } catch (err) {
       alert(err.message);
@@ -1378,15 +1381,29 @@ function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, 
   const incompleteSales = mySoOrders.filter(o => !claimedOrderIds.has(o.id));
   const completedSales = mySoOrders.filter(o => claimedOrderIds.has(o.id));
 
-  if (subView === 'newOrder') return <OrderForm user={user} items={items} accounts={accounts} onCancel={() => setSubView('home')} onSubmit={o => { setOrders(prev => [o, ...prev]); setSubView('home'); }} />;
+  if (subView === 'newOrder') return <OrderForm user={user} items={items} accounts={accounts} onCancel={() => setSubView('home')} onSubmit={async o => {
+    setOrders(prev => [o, ...prev]);
+    setSubView('home');
+    const { error } = await supabase.from('orders').insert(orderAppToRow(o));
+    if (error) { console.error('insert order failed:', error.message); alert(error.message); }
+  }} />;
   if (subView === 'editOrder' && editingOrder) return (
     <OrderForm
       user={user} items={items} accounts={accounts} editOrder={editingOrder}
       onCancel={() => { setEditingOrder(null); setSubView('home'); }}
-      onSubmit={o => { setOrders(prev => prev.map(x => x.id === editingOrder.id ? o : x)); setEditingOrder(null); setSubView('home'); }}
+      onSubmit={async o => {
+        setOrders(prev => prev.map(x => x.id === editingOrder.id ? o : x));
+        setEditingOrder(null); setSubView('home');
+        const { error } = await supabase.from('orders').update(orderAppToRow(o)).eq('id', o.id);
+        if (error) { console.error('update order failed:', error.message); alert(error.message); }
+      }}
     />
   );
-  if (subView === 'claim') return <ClaimWizard user={user} orders={orders} setView={setSubView} onSubmit={claim => setClaims(prev => [claim, ...prev])} />;
+  if (subView === 'claim') return <ClaimWizard user={user} orders={orders} setView={setSubView} onSubmit={async claim => {
+    setClaims(prev => [claim, ...prev]);
+    const { error } = await supabase.from('claims').insert(claimAppToRow(claim));
+    if (error) { console.error('insert claim failed:', error.message); alert(error.message); }
+  }} />;
 
   const actionButtons = (
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -2303,13 +2320,21 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
     setSoFile(null);
   };
 
+  const patchOrder = async (id, dbFields, appFields) => {
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, ...appFields } : o));
+    const { error } = await supabase.from('orders').update(dbFields).eq('id', id);
+    if (error) { console.error('update order failed:', error.message); alert(error.message); }
+  };
+
   const confirmOpen = async (id) => {
     if (!soNumber.trim() || !soFile) return;
     setUploadingSo(true);
     setSoUploadError('');
     try {
       const soFileUrl = await uploadToDrive(soFile, 'so_pdf');
-      setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'so_opened', soNumber, soFileUrl, soFileName: soFile.name, deliveryStage: 'arranging' } : o));
+      await patchOrder(id,
+        { status: 'so_opened', so_number: soNumber, so_file_url: soFileUrl, so_file_name: soFile.name, delivery_stage: 'arranging' },
+        { status: 'so_opened', soNumber, soFileUrl, soFileName: soFile.name, deliveryStage: 'arranging' });
       setOpeningId(null); setSoNumber(''); setSoFile(null);
     } catch (err) {
       setSoUploadError(err.message);
@@ -2320,19 +2345,18 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
   const startReject = (o) => { setRejectingId(o.id); setRejectReason(''); };
   const confirmReject = (id) => {
     if (!rejectReason.trim()) return;
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'so_rejected', rejectReason, soNumber: null } : o));
+    patchOrder(id, { status: 'so_rejected', reject_reason: rejectReason, so_number: null }, { status: 'so_rejected', rejectReason, soNumber: null });
     setRejectingId(null); setRejectReason('');
   };
-  const reopenOrder = (id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'pending_so', rejectReason: null } : o));
+  const reopenOrder = (id) => patchOrder(id, { status: 'pending_so', reject_reason: null }, { status: 'pending_so', rejectReason: null });
 
   const toggleDetail = (id) => setDetailId(prev => prev === id ? null : id);
-  const setLogisticStatus = (id, status) => setOrders(prev => prev.map(o => o.id === id ? { ...o, logisticStatus: status } : o));
-  const markDelivered = (id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, deliveryStage: 'delivered' } : o));
-  const setIssueCheck = (id, hasIssue, remark) => setOrders(prev => prev.map(o => o.id === id ? {
-    ...o, issueChecked: true, hasIssue, issueRemark: hasIssue ? remark : '',
-    issueResolved: false, issueApproved: false, issueProofFile: null, issueProofUrl: null,
-  } : o));
-  const approveResolution = (id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, issueApproved: true } : o));
+  const setLogisticStatus = (id, status) => patchOrder(id, { logistic_status: status }, { logisticStatus: status });
+  const markDelivered = (id) => patchOrder(id, { delivery_stage: 'delivered' }, { deliveryStage: 'delivered' });
+  const setIssueCheck = (id, hasIssue, remark) => patchOrder(id,
+    { issue_checked: true, has_issue: hasIssue, issue_remark: hasIssue ? remark : '', issue_resolved: false, issue_approved: false, issue_proof_file: null, issue_proof_url: null },
+    { issueChecked: true, hasIssue, issueRemark: hasIssue ? remark : '', issueResolved: false, issueApproved: false, issueProofFile: null, issueProofUrl: null });
+  const approveResolution = (id) => patchOrder(id, { issue_approved: true }, { issueApproved: true });
 
   return (
     <div>
@@ -2776,10 +2800,15 @@ function AccountDashboard({ orders, claims, setClaims, setOrders }) {
   const [expandedId, setExpandedId] = useState(null);
   const [filter, setFilter] = useState('all');
 
-  const approveSlip = (claim) => {
-    const nowStamp = nowDateTime();
+  const approveSlip = async (claim) => {
     setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, slipApproved: true } : c));
-    if (claim.orderId) setOrders(prev => prev.map(o => o.id === claim.orderId ? { ...o, paymentReceived: true } : o));
+    const { error: claimErr } = await supabase.from('claims').update({ slip_approved: true }).eq('id', claim.id);
+    if (claimErr) { console.error('approve slip failed:', claimErr.message); alert(claimErr.message); }
+    if (claim.orderId) {
+      setOrders(prev => prev.map(o => o.id === claim.orderId ? { ...o, paymentReceived: true } : o));
+      const { error: orderErr } = await supabase.from('orders').update({ payment_received: true }).eq('id', claim.orderId);
+      if (orderErr) console.error('update payment received failed:', orderErr.message);
+    }
   };
 
   const filtered = filter === 'all' ? claims : filter === 'approved' ? claims.filter(c => c.slipApproved) : claims.filter(c => !c.slipApproved);
@@ -2865,7 +2894,11 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
   })).sort((a, b) => b.total - a.total);
   const [expandedTeam, setExpandedTeam] = useState(null);
 
-  const setStatus = (id, status) => setClaims(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+  const setStatus = async (id, status) => {
+    setClaims(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+    const { error } = await supabase.from('claims').update({ status }).eq('id', id);
+    if (error) { console.error('update claim status failed:', error.message); alert(error.message); }
+  };
 
   const doExport = () => {
     const monthOrders = orders.filter(o => monthKey(o.date) === exportMonth);
@@ -3176,8 +3209,8 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
   const [accounts, setAccounts] = useState(initialAccounts || []);
   const [ready, setReady] = useState(false);
   useEffect(() => { setReady(true); }, []);
-  useEffect(() => { if (ready) upsertRows('orders', orders.map(orderAppToRow)); }, [orders]);
-  useEffect(() => { if (ready) upsertRows('claims', claims.map(claimAppToRow)); }, [claims]);
+  // 注意：orders / claims 不再用「整包同步」的方式（多人同时在线时旧分页可能覆盖新资料），
+  // 改成每个操作各自精准写入对应的栏位，详见各操作函式内的 supabase 呼叫
   useEffect(() => { if (ready) replaceTable('items', items.map(itemAppToRow)); }, [items]);
   // 注意：accounts 不用整批同步（前端已经不存密码，整批写回去会把密码清空），
   // 新增/重设密码/删除都在 AccountsManager 里直接、个别地写入数据库
