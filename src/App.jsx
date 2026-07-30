@@ -3235,40 +3235,13 @@ export default function FurnitureOpsPrototype() {
     let cancelled = false;
     (async () => {
       try {
-        let [teamsRes, accountsRes, itemsRes, ordersRes, claimsRes] = await Promise.all([
+        const [teamsRes, accountsRes, itemsRes, ordersRes, claimsRes] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
           supabase.from('items').select('*'),
           supabase.from('orders').select('*'),
           supabase.from('claims').select('*'),
         ]);
-
-        // 第一次跑、数据库还是空的话，把种子资料写进去
-        if (!teamsRes.error && teamsRes.data.length === 0) {
-          await supabase.from('teams').insert(teamsMapToRows(INIT_TEAMS));
-          teamsRes = await supabase.from('teams').select('*');
-        }
-        if (!accountsRes.error && accountsRes.data.length === 0) {
-          // 账号现在是真正的 Supabase Auth 用户，要透过 Edge Function 一个一个建立
-          for (const a of INIT_ACCOUNTS) {
-            await supabase.functions.invoke('accounts-admin', { body: { action: 'create', role: a.role, name: a.name, team: a.team, password: a.password } });
-          }
-          // Finance 的登入账号（种子资料本身没有，额外建一个）
-          await supabase.functions.invoke('accounts-admin', { body: { action: 'create', role: 'finance', name: 'Finance User', password: '123456' } });
-          accountsRes = await supabase.from('profiles').select('*');
-        }
-        if (!itemsRes.error && itemsRes.data.length === 0) {
-          await supabase.from('items').insert(INIT_ITEMS.map(itemAppToRow));
-          itemsRes = await supabase.from('items').select('*');
-        }
-        if (!ordersRes.error && ordersRes.data.length === 0) {
-          await supabase.from('orders').insert(INIT_ORDERS.map(orderAppToRow));
-          ordersRes = await supabase.from('orders').select('*');
-        }
-        if (!claimsRes.error && claimsRes.data.length === 0) {
-          await supabase.from('claims').insert(INIT_CLAIMS.map(claimAppToRow));
-          claimsRes = await supabase.from('claims').select('*');
-        }
 
         const firstError = [teamsRes, accountsRes, itemsRes, ordersRes, claimsRes].find(r => r.error);
         if (firstError) throw firstError.error;
