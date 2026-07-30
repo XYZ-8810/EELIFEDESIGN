@@ -2744,11 +2744,21 @@ function ItemsManager({ items, setItems }) {
   const [editingItem, setEditingItem] = useState(null);
   const [addingItem, setAddingItem] = useState(false);
 
-  const saveItem = (draft) => {
-    setItems(prev => prev.some(i => i.id === draft.id) ? prev.map(i => i.id === draft.id ? draft : i) : [...prev, { ...draft, id: Date.now() }]);
+  const saveItem = async (draft) => {
+    const isExisting = items.some(i => i.id === draft.id);
+    const finalItem = isExisting ? draft : { ...draft, id: Date.now() };
+    setItems(prev => isExisting ? prev.map(i => i.id === draft.id ? draft : i) : [...prev, finalItem]);
     setEditingItem(null); setAddingItem(false);
+    const { error } = isExisting
+      ? await supabase.from('items').update(itemAppToRow(finalItem)).eq('id', finalItem.id)
+      : await supabase.from('items').insert(itemAppToRow(finalItem));
+    if (error) { console.error('save item failed:', error.message); alert(error.message); }
   };
-  const deleteItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+  const deleteItem = async (id) => {
+    setItems(prev => prev.filter(i => i.id !== id));
+    const { error } = await supabase.from('items').delete().eq('id', id);
+    if (error) { console.error('delete item failed:', error.message); alert(error.message); }
+  };
 
   return (
     <div>
@@ -3207,11 +3217,8 @@ function AppInner({ initialOrders, initialClaims, initialItems, initialAccounts,
   const [claims, setClaims] = useState(initialClaims || []);
   const [items, setItems] = useState(initialItems || []);
   const [accounts, setAccounts] = useState(initialAccounts || []);
-  const [ready, setReady] = useState(false);
-  useEffect(() => { setReady(true); }, []);
-  // 注意：orders / claims 不再用「整包同步」的方式（多人同时在线时旧分页可能覆盖新资料），
+  // 注意：orders / claims / items 都不再用「整包同步」的方式（多人同时在线时旧分页可能覆盖新资料），
   // 改成每个操作各自精准写入对应的栏位，详见各操作函式内的 supabase 呼叫
-  useEffect(() => { if (ready) replaceTable('items', items.map(itemAppToRow)); }, [items]);
   // 注意：accounts 不用整批同步（前端已经不存密码，整批写回去会把密码清空），
   // 新增/重设密码/删除都在 AccountsManager 里直接、个别地写入数据库
 
