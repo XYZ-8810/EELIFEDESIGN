@@ -277,6 +277,15 @@ const STRINGS = {
   nav_orders: { zh: 'Orders', en: 'Orders' },
   allOrdersTitle: { zh: '我的所有订单', en: 'All My Orders' },
   showMoreRows: { zh: '往下滑动查看更多', en: 'Scroll down for more' },
+  accountEmail: { zh: 'Gmail 账号', en: 'Gmail Address' },
+  accountEmailNote: { zh: '这是登入用的账号，建立后不能更改，请确认无误', en: 'This is used to log in and cannot be changed after creation \u2014 please double-check it' },
+  emailInvalid: { zh: '请输入正确格式的Gmail账号', en: 'Please enter a valid email address' },
+  emailLabel: { zh: 'Gmail 账号', en: 'Email' },
+  passwordLabel: { zh: '密码', en: 'Password' },
+  loginFieldsRequired: { zh: '请输入账号和密码', en: 'Please enter your email and password' },
+  accountNotFound: { zh: '找不到对应的账号资料，请联络Finance', en: 'No matching account found \u2014 please contact Finance' },
+  updateEmailAction: { zh: '更新Email', en: 'Update Email' },
+  noEmailSet: { zh: '尚未设定真实Email', en: 'No real email set' },
   exportSalesTitle: { zh: '汇出销售报表', en: 'Export Sales Report' },
   exportSalesDesc: { zh: '选一个月份，把那个月所有订单（不限状态）汇出成Excel档案，每笔订单会附上状态栏位', en: 'Pick a month to export all that month\u2019s orders (any status) as an Excel file, with a status column on each row' },
   exportMonthLabel: { zh: '选择月份', en: 'Select Month' },
@@ -294,10 +303,19 @@ const STRINGS = {
   exportColTotalPayment: { zh: 'Total Payment', en: 'Total Payment' },
   exportColDifference: { zh: 'Difference', en: 'Difference' },
   exportColPaymentReceived: { zh: 'Payment已收到', en: 'Payment Received' },
+  exportColAlamat: { zh: '地址 Alamat', en: 'Alamat' },
+  exportColPhone1: { zh: '电话1', en: 'Phone 1' },
+  exportColPhone2: { zh: '电话2', en: 'Phone 2' },
+  exportColSalesmanPhone: { zh: '销售员电话', en: 'Salesman Phone' },
+  exportColSalesExecutive: { zh: 'Sales Executive', en: 'Sales Executive' },
+  exportColDepositAmount: { zh: '订金金额', en: 'Deposit Amount' },
+  exportColDeliveryUrgent: { zh: '7天内送货', en: 'Urgent Delivery' },
+  exportColRemark: { zh: '备注', en: 'Remark' },
   mySalesChartTitle: { zh: '我的业绩总览', en: 'My Sales Overview' },
   chartTotalSales: { zh: 'Total Sales', en: 'Total Sales' },
   chartApprovedCommission: { zh: '已核实佣金', en: 'Approved Commission' },
   chartNotClaimedYet: { zh: '未申请佣金', en: 'Not Claimed Yet' },
+  dateRangeLabel: { zh: '时间段', en: 'Date Range' },
   exportColStatus: { zh: '状态', en: 'Status' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
   submitToFinance: { zh: '提交给财务核实', en: 'Submit to Finance for Verification' },
@@ -589,20 +607,29 @@ function exportOrdersToExcel(orders, teams, monthKeyStr, t) {
       [t('exportColStatus')]: statusLabel(o.status),
       [t('exportColSoNumber')]: o.soNumber || '',
       [t('exportColCustomer')]: o.customer,
+      [t('exportColAlamat')]: o.alamat || '',
       [t('exportColPoscode')]: o.poscode || '',
+      [t('exportColPhone1')]: o.phone1 || '',
+      [t('exportColPhone2')]: o.phone2 || '',
       [t('exportColAgent')]: o.agent,
+      [t('exportColSalesmanPhone')]: o.salesmanPhone || '',
+      [t('exportColSalesExecutive')]: o.salesExecutive || '',
       [t('exportColTeam')]: teams[o.team]?.name || o.team || '',
-      [t('exportColItems')]: (o.items || []).map(it => `${it.code} x${it.qty}`).join(', '),
+      [t('exportColItems')]: (o.items || []).map(it => `${it.name || it.code} x${it.qty}`).join(', '),
       [t('exportColTotalBill')]: bill,
       [t('exportColTotalPayment')]: payment,
       [t('exportColDifference')]: payment - bill,
       [t('exportColPaymentReceived')]: o.paymentReceived ? 'Yes' : 'No',
+      [t('exportColDepositAmount')]: o.depositAmount || '',
+      [t('exportColDeliveryUrgent')]: o.deliveryUrgent ? 'Yes' : 'No',
+      [t('exportColRemark')]: o.remark || '',
     };
   });
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
-    { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 10 },
-    { wch: 14 }, { wch: 16 }, { wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
+    { wch: 22 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 30 }, { wch: 10 },
+    { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 30 },
+    { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 24 },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, monthKeyStr);
@@ -910,75 +937,74 @@ function AuthStep({ pendingUser, onBack, onSuccess }) {
 function LoginScreen({ onLogin, accounts }) {
   const { t } = useLang();
   const { teams } = useTeamsCtx();
-  const [role, setRole] = useState(null);
-  const [pendingUser, setPendingUser] = useState(null);
-  const roles = [
-    { id: 'salesman', title: t('role_salesman'), sub: t('role_salesman_sub'), desc: t('role_salesman_desc'), icon: ClipboardList },
-    { id: 'leader', title: t('role_leader'), sub: t('role_leader_sub'), desc: t('role_leader_desc'), icon: Users },
-    { id: 'admin', title: t('role_admin'), sub: t('role_admin_sub'), desc: t('role_admin_desc'), icon: FileStack },
-    { id: 'finance', title: t('role_finance'), sub: t('role_finance_sub'), desc: t('role_finance_desc'), icon: Receipt },
-    { id: 'account', title: t('role_account'), sub: t('role_account_sub'), desc: t('role_account_desc'), icon: ShieldCheck },
-  ];
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState('');
+  const [checking, setChecking] = useState(false);
 
-  if (!role) {
-    return (
-      <div style={{ minHeight: '100vh', background: C.ink, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ position: 'absolute', top: 24, right: 24 }}><LangToggle dark /></div>
-        <div style={{ marginBottom: 40, textAlign: 'center' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <Building2 size={22} color={C.woodLight} />
-            <span style={{ fontFamily: fontMono, fontSize: 12, letterSpacing: '0.25em', color: C.woodLight, textTransform: 'uppercase' }}>EE Life Design Sdn. Bhd.</span>
-          </div>
-          <div style={{ fontFamily: fontDisplay, fontSize: 34, fontWeight: 600, color: '#F5F1E8' }}>{t('appName')}</div>
-          <div style={{ fontFamily: fontBody, fontSize: 13.5, color: '#B8B2A0', marginTop: 6 }}>{t('chooseRole')}</div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, width: '100%', maxWidth: 880 }}>
-          {roles.map(r => (
-            <button key={r.id} onClick={() => setRole(r.id)}
-              style={{ textAlign: 'left', background: '#2C2E28', border: `1px solid #3C3D35`, borderRadius: 12, padding: 22, cursor: 'pointer', color: '#F5F1E8' }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = C.woodLight)}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = '#3C3D35')}>
-              <r.icon size={20} color={C.woodLight} />
-              <div style={{ fontFamily: fontDisplay, fontSize: 19, fontWeight: 600, marginTop: 12 }}>{r.title}</div>
-              <div style={{ fontFamily: fontMono, fontSize: 11, color: C.woodLight, marginTop: 2, letterSpacing: '0.05em' }}>{r.sub}</div>
-              <div style={{ fontFamily: fontBody, fontSize: 12.5, color: '#B8B2A0', marginTop: 10, lineHeight: 1.5 }}>{r.desc}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // 第三步：密码 / Face ID 验证（实际密码比对在 AuthStep 内透过数据库函式处理，前端不接触密码）
-  if (pendingUser) {
-    return <AuthStep pendingUser={pendingUser} onBack={() => setPendingUser(null)} onSuccess={() => onLogin(pendingUser)} />;
-  }
-
-  // 第二步：选择具体人员 —— 名单来自 Finance 建立的账号，不是自行注册
-  let people = [];
-  if (role === 'salesman') people = accounts.filter(a => a.role === 'salesman').map(a => ({ key: a.id, label: a.name, sub: teams[a.team]?.name, team: a.team, accountId: a.id, email: a.email }));
-  if (role === 'leader') people = accounts.filter(a => a.role === 'leader').map(a => ({ key: a.id, label: teams[a.team]?.name, sub: teams[a.team]?.leader ? `Team Leader · ${teams[a.team].leader}` : null, team: a.team, leaderName: teams[a.team]?.leader, accountId: a.id, email: a.email }));
-  if (role === 'admin') people = accounts.filter(a => a.role === 'admin').map(a => ({ key: a.id, label: a.name, team: null, accountId: a.id, email: a.email }));
-  if (role === 'finance') people = accounts.filter(a => a.role === 'finance').map(a => ({ key: a.id, label: a.name || 'Finance User', team: null, accountId: a.id, email: a.email }));
-  if (role === 'account') people = accounts.filter(a => a.role === 'account').map(a => ({ key: a.id, label: a.name || 'Account User', team: null, accountId: a.id, email: a.email }));
+  const submit = async () => {
+    if (!email.trim() || !password) { setError(t('loginFieldsRequired')); return; }
+    setChecking(true);
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (authError || !data?.user) { setChecking(false); setError(t('wrongPassword')); return; }
+    const acc = accounts.find(a => a.id === data.user.id);
+    if (!acc) {
+      await supabase.auth.signOut();
+      setChecking(false);
+      setError(t('accountNotFound'));
+      return;
+    }
+    setChecking(false);
+    onLogin({
+      role: acc.role,
+      name: acc.role === 'leader' ? teams[acc.team]?.name : acc.name,
+      team: acc.team,
+      accountId: acc.id,
+      email: acc.email,
+      leaderName: acc.role === 'leader' ? teams[acc.team]?.leader : undefined,
+    });
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: C.ink, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <button onClick={() => setRole(null)} style={{ position: 'absolute', top: 24, left: 24, background: 'none', border: 'none', color: '#B8B2A0', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: fontBody, fontSize: 13 }}>
-        <ArrowLeft size={15} /> {t('back')}
-      </button>
-      <div style={{ fontFamily: fontDisplay, fontSize: 24, color: '#F5F1E8', marginBottom: 20 }}>{t('imA')}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 340 }}>
-        {people.length === 0 && (
-          <div style={{ color: '#8A8474', fontSize: 13, textAlign: 'center', maxWidth: 300 }}>{t('noAccountsYet')}</div>
-        )}
-        {people.map(p => (
-          <button key={p.key} onClick={() => setPendingUser({ role, name: p.label, team: p.team, leaderName: p.leaderName, accountId: p.accountId, email: p.email })}
-            style={{ background: '#2C2E28', border: `1px solid #3C3D35`, borderRadius: 8, padding: '12px 16px', color: '#F5F1E8', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: fontBody, fontSize: 14 }}>
-            <span>{p.label}{p.sub ? <span style={{ color: '#8A8474', fontSize: 12 }}> · {p.sub}</span> : ''}</span>
-            <ChevronRight size={16} color={C.woodLight} />
-          </button>
-        ))}
+      <div style={{ position: 'absolute', top: 24, right: 24 }}><LangToggle dark /></div>
+      <div style={{ marginBottom: 32, textAlign: 'center' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <Building2 size={22} color={C.woodLight} />
+          <span style={{ fontFamily: fontMono, fontSize: 12, letterSpacing: '0.25em', color: C.woodLight, textTransform: 'uppercase' }}>EE Life Design Sdn. Bhd.</span>
+        </div>
+        <div style={{ fontFamily: fontDisplay, fontSize: 34, fontWeight: 600, color: '#F5F1E8' }}>{t('appName')}</div>
+      </div>
+      <div style={{ width: '100%', maxWidth: 340, background: '#2C2E28', border: '1px solid #3C3D35', borderRadius: 12, padding: 24 }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: fontBody, fontSize: 12, color: '#B8B2A0', marginBottom: 6 }}>{t('emailLabel')}</div>
+          <input
+            type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="name@gmail.com"
+            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid #3C3D35', background: '#1E201B', color: '#F5F1E8', fontFamily: fontBody, fontSize: 14 }}
+          />
+        </div>
+        <div style={{ marginBottom: 6 }}>
+          <div style={{ fontFamily: fontBody, fontSize: 12, color: '#B8B2A0', marginBottom: 6 }}>{t('passwordLabel')}</div>
+          <div style={{ position: 'relative' }}>
+            <input
+              type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 40px 10px 12px', borderRadius: 8, border: '1px solid #3C3D35', background: '#1E201B', color: '#F5F1E8', fontFamily: fontBody, fontSize: 14 }}
+            />
+            <button onClick={() => setShowPw(!showPw)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer' }}>
+              {showPw ? <EyeOff size={16} color="#8A8474" /> : <Eye size={16} color="#8A8474" />}
+            </button>
+          </div>
+        </div>
+        {error && <div style={{ color: '#E08A7D', fontSize: 12, marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={13} /> {error}</div>}
+        <button onClick={submit} disabled={checking} style={{
+          width: '100%', marginTop: 16, background: C.wood, color: '#fff', border: 'none', borderRadius: 8, padding: '11px 0',
+          fontFamily: fontBody, fontWeight: 700, fontSize: 14, cursor: checking ? 'default' : 'pointer', opacity: checking ? 0.6 : 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}>
+          <Lock size={15} /> {checking ? '…' : t('login')}
+        </button>
       </div>
     </div>
   );
@@ -1092,36 +1118,60 @@ function Shell({ user, view, setView, navItems, onLogout, accounts, setAccounts,
 }
 
 /* ============================== 团队业绩图 ============================== */
-function MySalesChart({ orders, claims, agentName, lang }) {
+function MySalesChart({ orders, claims, agentName }) {
   const { t } = useLang();
-  const myOrders = orders.filter(o => o.agent === agentName);
-  const myClaims = claims.filter(c => c.agent === agentName);
-  const claimedOrderIds = new Set(myClaims.map(c => c.orderId));
-  const approvedOrderIds = new Set(myClaims.filter(c => c.status === 'verified').map(c => c.orderId));
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
-  const totalSales = myOrders.reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
-  const approvedSales = myOrders.filter(o => approvedOrderIds.has(o.id)).reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
-  const notClaimedSales = myOrders.filter(o => o.status === 'so_opened' && !claimedOrderIds.has(o.id)).reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
+  const inRange = o => {
+    if (!o.date) return true;
+    const d = o.date.slice(0, 10);
+    if (fromDate && d < fromDate) return false;
+    if (toDate && d > toDate) return false;
+    return true;
+  };
+
+  const myOrders = orders.filter(o => o.agent === agentName && inRange(o));
+  const myClaims = claims.filter(c => c.agent === agentName);
+  const verifiedOrderIds = new Set(myClaims.filter(c => c.status === 'verified').map(c => c.orderId));
+  const anyClaimOrderIds = new Set(myClaims.map(c => c.orderId));
+
+  const amountOf = o => o.amount != null ? o.amount : o.total;
+  // “sales” 只有 Account 核实过水单（order.paymentReceived）才算，不是开了 SO 就算
+  const totalSales = myOrders.filter(o => o.paymentReceived).reduce((s, o) => s + amountOf(o), 0);
+  const verifiedSales = myOrders.filter(o => verifiedOrderIds.has(o.id)).reduce((s, o) => s + amountOf(o), 0);
+  const notClaimedSales = myOrders.filter(o => o.status === 'so_opened' && !anyClaimOrderIds.has(o.id)).reduce((s, o) => s + amountOf(o), 0);
 
   const data = [
     { name: t('chartTotalSales'), value: totalSales, fill: C.wood },
-    { name: t('chartApprovedCommission'), value: approvedSales, fill: C.teal },
+    { name: t('chartApprovedCommission'), value: verifiedSales, fill: C.teal },
     { name: t('chartNotClaimedYet'), value: notClaimedSales, fill: C.ochre },
   ];
 
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '18px 20px', height: 260 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
-          <CartesianGrid vertical={false} stroke={C.line} />
-          <XAxis dataKey="name" tick={{ fontFamily: fontBody, fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.line }} tickLine={false} />
-          <YAxis tick={{ fontFamily: fontMono, fontSize: 10.5, fill: C.sub }} axisLine={false} tickLine={false} tickFormatter={v => `${v / 1000}k`} />
-          <Tooltip formatter={v => RM(v)} contentStyle={{ fontFamily: fontBody, fontSize: 12.5, border: `1px solid ${C.line}`, borderRadius: 6 }} />
-          <Bar dataKey="value" radius={[5, 5, 0, 0]}>
-            {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: C.sub, fontFamily: fontBody }}>{t('dateRangeLabel')}</span>
+        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
+        <span style={{ fontSize: 12, color: C.sub }}>–</span>
+        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
+        {(fromDate || toDate) && (
+          <button onClick={() => { setFromDate(''); setToDate(''); }} style={{ background: 'none', border: `1px solid ${C.line}`, borderRadius: 6, padding: '0 10px', height: 34, cursor: 'pointer', fontSize: 12, color: C.sub }}>{t('cancel')}</button>
+        )}
+      </div>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '18px 20px', height: 260 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={C.line} />
+            <XAxis dataKey="name" tick={{ fontFamily: fontBody, fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.line }} tickLine={false} />
+            <YAxis tick={{ fontFamily: fontMono, fontSize: 10.5, fill: C.sub }} axisLine={false} tickLine={false} tickFormatter={v => `${v / 1000}k`} />
+            <Tooltip formatter={v => RM(v)} contentStyle={{ fontFamily: fontBody, fontSize: 12.5, border: `1px solid ${C.line}`, borderRadius: 6 }} />
+            <Bar dataKey="value" radius={[5, 5, 0, 0]}>
+              {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -1131,7 +1181,7 @@ function TeamChart({ team, orders, accounts }) {
   const thisMonth = currentMonthKey();
   const data = members.map(m => ({
     name: m.split(' ')[0],
-    sales: orders.filter(o => o.agent === m && o.status === 'so_opened' && monthKey(o.date) === thisMonth).reduce((s, o) => s + o.total, 0),
+    sales: orders.filter(o => o.agent === m && o.paymentReceived && monthKey(o.date) === thisMonth).reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0),
   }));
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '18px 20px', height: 260 }}>
@@ -1999,7 +2049,7 @@ function LeaderDashboard({ user, orders, claims, accounts }) {
   const team = teams[user.team];
   const teamOrders = orders.filter(o => o.team === user.team);
   const thisMonth = currentMonthKey();
-  const total = teamOrders.filter(o => o.status === 'so_opened' && monthKey(o.date) === thisMonth).reduce((s, o) => s + o.total, 0);
+  const total = teamOrders.filter(o => o.paymentReceived && monthKey(o.date) === thisMonth).reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0);
 
   return (
     <div>
@@ -2551,21 +2601,23 @@ function AccountsManager({ accounts, setAccounts }) {
   const [team, setTeam] = useState('');
   const [teamNameInput, setTeamNameInput] = useState('');
   const [password, setPassword] = useState('');
+  const [accountEmail, setAccountEmail] = useState('');
   const [error, setError] = useState('');
   const [resettingId, setResettingId] = useState(null);
   const [resetValue, setResetValue] = useState('');
 
-  const startCreate = (role) => { setCreatingRole(role); setName(''); setTeam(''); setTeamNameInput(''); setPassword(''); setError(''); };
+  const startCreate = (role) => { setCreatingRole(role); setName(''); setTeam(''); setTeamNameInput(''); setPassword(''); setAccountEmail(''); setError(''); };
 
   const submitCreate = async () => {
     if (!password.trim() || password.length < 6) { setError(t('passwordTooShort')); return; }
+    if (!accountEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountEmail.trim())) { setError(t('emailInvalid')); return; }
     let payload = null;
     if (creatingRole === 'salesman') {
       if (!name.trim()) { setError(t('accountName')); return; }
       if (!team) { setError(t('chooseTeam')); return; }
       const dup = accounts.some(a => a.role === 'salesman' && a.name.trim().toLowerCase() === name.trim().toLowerCase());
       if (dup) { setError(t('errSalesmanNameDuplicate', { name: name.trim() })); return; }
-      payload = { role: 'salesman', name: name.trim(), team, password };
+      payload = { role: 'salesman', name: name.trim(), team, password, email: accountEmail.trim() };
     } else if (creatingRole === 'leader') {
       const typedName = teamNameInput.trim();
       if (!typedName) { setError(t('accountTeam')); return; }
@@ -2579,13 +2631,13 @@ function AccountsManager({ accounts, setAccounts }) {
         teamId = `team_${Date.now()}`;
         setTeams(prev => ({ ...prev, [teamId]: { id: teamId, name: typedName, leader: null, members: [] } }));
       }
-      payload = { role: 'leader', team: teamId, password };
+      payload = { role: 'leader', team: teamId, password, email: accountEmail.trim() };
     } else if (creatingRole === 'admin') {
       if (!name.trim()) { setError(t('accountName')); return; }
-      payload = { role: 'admin', name: name.trim(), password };
+      payload = { role: 'admin', name: name.trim(), password, email: accountEmail.trim() };
     } else if (creatingRole === 'account') {
       if (!name.trim()) { setError(t('accountName')); return; }
-      payload = { role: 'account', name: name.trim(), password };
+      payload = { role: 'account', name: name.trim(), password, email: accountEmail.trim() };
     }
     if (!payload) return;
     setCreatingBusy(true);
@@ -2609,6 +2661,21 @@ function AccountsManager({ accounts, setAccounts }) {
     if (fnError || data?.error) { console.error(fnError || data.error); return; }
     setAccounts(prev => prev.map(a => a.id === id ? { ...a, team: changeTeamValue } : a));
     setChangingTeamId(null); setChangeTeamValue('');
+  };
+
+  const [changingEmailId, setChangingEmailId] = useState(null);
+  const [changeEmailValue, setChangeEmailValue] = useState('');
+  const [changeEmailBusy, setChangeEmailBusy] = useState(false);
+  const [changeEmailError, setChangeEmailError] = useState('');
+
+  const confirmChangeEmail = async (id) => {
+    if (!changeEmailValue.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(changeEmailValue.trim())) { setChangeEmailError(t('emailInvalid')); return; }
+    setChangeEmailBusy(true);
+    const { data, error: fnError } = await supabase.functions.invoke('accounts-admin', { body: { action: 'updateEmail', userId: id, email: changeEmailValue.trim() } });
+    setChangeEmailBusy(false);
+    if (fnError || data?.error) { setChangeEmailError((data && data.error) || fnError.message); return; }
+    setAccounts(prev => prev.map(a => a.id === id ? { ...a, email: changeEmailValue.trim() } : a));
+    setChangingEmailId(null); setChangeEmailValue(''); setChangeEmailError('');
   };
 
   const confirmReset = async (id) => {
@@ -2673,6 +2740,11 @@ function AccountsManager({ accounts, setAccounts }) {
               </div>
             )}
             <div>
+              <div style={{ fontFamily: fontBody, fontSize: 12, color: C.sub, marginBottom: 6, fontWeight: 600 }}>{t('accountEmail')}</div>
+              <input type="email" style={inputStyle} value={accountEmail} onChange={e => setAccountEmail(e.target.value)} placeholder="name@gmail.com" />
+              <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>{t('accountEmailNote')}</div>
+            </div>
+            <div>
               <div style={{ fontFamily: fontBody, fontSize: 12, color: C.sub, marginBottom: 6, fontWeight: 600 }}>{t('accountPassword')}</div>
               <input style={inputStyle} value={password} onChange={e => setPassword(e.target.value)} />
             </div>
@@ -2689,14 +2761,33 @@ function AccountsManager({ accounts, setAccounts }) {
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fontBody, fontSize: 13 }}>
           <thead><tr style={{ background: C.woodTint }}>
-            <th style={th}>{t('colRole')}</th><th style={th}>{t('colNameTeam')}</th><th style={th}>{t('colPassword')}</th><th style={th}></th>
+            <th style={th}>{t('colRole')}</th><th style={th}>{t('colNameTeam')}</th><th style={th}>{t('accountEmail')}</th><th style={th}>{t('colPassword')}</th><th style={th}></th>
           </tr></thead>
           <tbody>
-            {accounts.length === 0 && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noAccountsYet')}</td></tr>}
+            {accounts.length === 0 && <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: C.sub, padding: 30 }}>{t('noAccountsYet')}</td></tr>}
             {accounts.map(a => (
               <tr key={a.id} style={{ borderTop: `1px solid ${C.line}` }}>
                 <td style={td}>{roleLabel(a.role)}</td>
                 <td style={td}>{nameTeamLabel(a)}</td>
+                <td style={{ ...td, fontFamily: fontMono, fontSize: 11.5 }}>
+                  {changingEmailId === a.id ? (
+                    <div>
+                      <input autoFocus type="email" style={{ ...inputStyle, width: 180, padding: '6px 8px' }} value={changeEmailValue} onChange={e => { setChangeEmailValue(e.target.value); setChangeEmailError(''); }} />
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                        <Btn size="sm" icon={CheckCircle2} disabled={changeEmailBusy} onClick={() => confirmChangeEmail(a.id)}>{changeEmailBusy ? '…' : t('save')}</Btn>
+                        <Btn size="sm" variant="ghost" onClick={() => { setChangingEmailId(null); setChangeEmailError(''); }}>{t('cancel')}</Btn>
+                      </div>
+                      {changeEmailError && <div style={{ color: C.brick, fontSize: 11, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={11} /> {changeEmailError}</div>}
+                    </div>
+                  ) : (
+                    <div>
+                      {a.email || <span style={{ color: C.brick }}>{t('noEmailSet')}</span>}
+                      {a.role !== 'finance' && (
+                        <button onClick={() => { setChangingEmailId(a.id); setChangeEmailValue(a.email && a.email.includes('@eelifedesign.local') ? '' : (a.email || '')); setChangeEmailError(''); }} style={{ display: 'block', background: 'none', border: 'none', color: C.wood, cursor: 'pointer', fontSize: 11, textDecoration: 'underline', marginTop: 2, padding: 0 }}>{t('updateEmailAction')}</button>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td style={{ ...td, fontFamily: fontMono }}>
                   {resettingId === a.id ? (
                     <div>
@@ -2899,8 +2990,8 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
   const teamSales = Object.values(teams).map(tm => ({
     teamId: tm.id,
     team: tm.name,
-    total: orders.filter(o => o.team === tm.id && o.status === 'so_opened').reduce((s, o) => s + o.total, 0),
-    count: orders.filter(o => o.team === tm.id && o.status === 'so_opened').length,
+    total: orders.filter(o => o.team === tm.id && o.paymentReceived).reduce((s, o) => s + (o.amount != null ? o.amount : o.total), 0),
+    count: orders.filter(o => o.team === tm.id && o.paymentReceived).length,
   })).sort((a, b) => b.total - a.total);
   const [expandedTeam, setExpandedTeam] = useState(null);
 
