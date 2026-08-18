@@ -1139,8 +1139,6 @@ function MySalesChart({ orders, agentName, teamId }) {
   const teamSales = teamOrders.filter(o => o.paymentReceived).reduce((s, o) => s + amountOf(o), 0);
   const mySales = myOrders.filter(o => o.paymentReceived).reduce((s, o) => s + amountOf(o), 0);
   const myPendingSales = myOrders.filter(o => o.status === 'so_opened' && !o.paymentReceived).reduce((s, o) => s + amountOf(o), 0);
-  const verifiedSales = myOrders.filter(o => verifiedOrderIds.has(o.id)).reduce((s, o) => s + amountOf(o), 0);
-  const notClaimedSales = myOrders.filter(o => o.status === 'so_opened' && !anyClaimOrderIds.has(o.id)).reduce((s, o) => s + amountOf(o), 0);
 
   const data = [
     { name: t('chartTeamSales'), value: teamSales, fill: C.wood },
