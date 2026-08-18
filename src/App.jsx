@@ -312,9 +312,9 @@ const STRINGS = {
   exportColDeliveryUrgent: { zh: '7天内送货', en: 'Urgent Delivery' },
   exportColRemark: { zh: '备注', en: 'Remark' },
   mySalesChartTitle: { zh: '我的业绩总览', en: 'My Sales Overview' },
-  chartTotalSales: { zh: 'Total Sales', en: 'Total Sales' },
-  chartApprovedCommission: { zh: '已核实佣金', en: 'Approved Commission' },
-  chartNotClaimedYet: { zh: '未申请佣金', en: 'Not Claimed Yet' },
+  chartTeamSales: { zh: '全team业绩（已核实）', en: 'Team Sales (Approved)' },
+  chartMySales: { zh: '我的业绩（已核实）', en: 'My Sales (Approved)' },
+  chartMyPendingSales: { zh: '我的业绩（未核实/未申请）', en: 'My Sales (Pending/Not Claimed)' },
   dateRangeLabel: { zh: '时间段', en: 'Date Range' },
   exportColStatus: { zh: '状态', en: 'Status' },
   commissionHiddenNote: { zh: '佣金金额将由财务核实后核算，此处不显示。', en: 'The commission amount will be calculated by Finance after verification, and is not shown here.' },
@@ -1118,7 +1118,7 @@ function Shell({ user, view, setView, navItems, onLogout, accounts, setAccounts,
 }
 
 /* ============================== 团队业绩图 ============================== */
-function MySalesChart({ orders, claims, agentName }) {
+function MySalesChart({ orders, agentName, teamId }) {
   const { t } = useLang();
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -1131,21 +1131,21 @@ function MySalesChart({ orders, claims, agentName }) {
     return true;
   };
 
-  const myOrders = orders.filter(o => o.agent === agentName && inRange(o));
-  const myClaims = claims.filter(c => c.agent === agentName);
-  const verifiedOrderIds = new Set(myClaims.filter(c => c.status === 'verified').map(c => c.orderId));
-  const anyClaimOrderIds = new Set(myClaims.map(c => c.orderId));
-
   const amountOf = o => o.amount != null ? o.amount : o.total;
+  const myOrders = orders.filter(o => o.agent === agentName && inRange(o));
+  const teamOrders = orders.filter(o => o.team === teamId && inRange(o));
+
   // “sales” 只有 Account 核实过水单（order.paymentReceived）才算，不是开了 SO 就算
-  const totalSales = myOrders.filter(o => o.paymentReceived).reduce((s, o) => s + amountOf(o), 0);
+  const teamSales = teamOrders.filter(o => o.paymentReceived).reduce((s, o) => s + amountOf(o), 0);
+  const mySales = myOrders.filter(o => o.paymentReceived).reduce((s, o) => s + amountOf(o), 0);
+  const myPendingSales = myOrders.filter(o => o.status === 'so_opened' && !o.paymentReceived).reduce((s, o) => s + amountOf(o), 0);
   const verifiedSales = myOrders.filter(o => verifiedOrderIds.has(o.id)).reduce((s, o) => s + amountOf(o), 0);
   const notClaimedSales = myOrders.filter(o => o.status === 'so_opened' && !anyClaimOrderIds.has(o.id)).reduce((s, o) => s + amountOf(o), 0);
 
   const data = [
-    { name: t('chartTotalSales'), value: totalSales, fill: C.wood },
-    { name: t('chartApprovedCommission'), value: verifiedSales, fill: C.teal },
-    { name: t('chartNotClaimedYet'), value: notClaimedSales, fill: C.ochre },
+    { name: t('chartTeamSales'), value: teamSales, fill: C.wood },
+    { name: t('chartMySales'), value: mySales, fill: C.teal },
+    { name: t('chartMyPendingSales'), value: myPendingSales, fill: C.ochre },
   ];
 
   return (
@@ -1504,7 +1504,7 @@ function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, 
         <StatCard label={t('completedSalesLabel')} value={completedSales.length} sub={RM(claimedTotal)} color={C.teal} icon={CheckCircle2} />
       </div>
       <SectionTitle eyebrow="Overview" title={t('mySalesChartTitle')} />
-      <MySalesChart orders={orders} claims={claims} agentName={user.name} />
+      <MySalesChart orders={orders} agentName={user.name} teamId={user.team} />
     </div>
   );
 }
@@ -2782,9 +2782,7 @@ function AccountsManager({ accounts, setAccounts }) {
                   ) : (
                     <div>
                       {a.email || <span style={{ color: C.brick }}>{t('noEmailSet')}</span>}
-                      {a.role !== 'finance' && (
-                        <button onClick={() => { setChangingEmailId(a.id); setChangeEmailValue(a.email && a.email.includes('@eelifedesign.local') ? '' : (a.email || '')); setChangeEmailError(''); }} style={{ display: 'block', background: 'none', border: 'none', color: C.wood, cursor: 'pointer', fontSize: 11, textDecoration: 'underline', marginTop: 2, padding: 0 }}>{t('updateEmailAction')}</button>
-                      )}
+                      <button onClick={() => { setChangingEmailId(a.id); setChangeEmailValue(a.email && a.email.includes('@eelifedesign.local') ? '' : (a.email || '')); setChangeEmailError(''); }} style={{ display: 'block', background: 'none', border: 'none', color: C.wood, cursor: 'pointer', fontSize: 11, textDecoration: 'underline', marginTop: 2, padding: 0 }}>{t('updateEmailAction')}</button>
                     </div>
                   )}
                 </td>
