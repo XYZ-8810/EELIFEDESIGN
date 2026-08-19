@@ -272,6 +272,11 @@ const STRINGS = {
   multiMethodHint: { zh: '客户用多种方式付款的话，可以多选', en: 'Select more than one if the customer paid using multiple methods' },
   noMethodSelected: { zh: '请先回上一步选择付款方式', en: 'Go back and select a payment method first' },
   colBankSlipMethod: { zh: '付款方式 / 水单', en: 'Method / Slip' },
+  slipRejectedTag: { zh: '已拒绝', en: 'Rejected' },
+  rejectSlip: { zh: '拒绝水单', en: 'Reject Slip' },
+  slipRejectReasonPlaceholder: { zh: '请写清楚拒绝原因，Salesman会看到', en: 'Explain why \u2014 the salesman will see this' },
+  confirmReject: { zh: '确认拒绝', en: 'Confirm Reject' },
+  commClaimRejectedTitle: { zh: '佣金申请被拒绝，需要重新提交', en: 'Commission claim rejected \u2014 resubmission needed' },
   itemIdCol: { zh: '商品编号', en: 'Item ID' },
   itemNameCol: { zh: '商品名称', en: 'Item Name' },
   qtyColShort: { zh: '数量', en: 'Qty' },
@@ -707,6 +712,7 @@ function claimRowToApp(r) {
     itemAmount: r.item_amount != null ? Number(r.item_amount) : null, claimAmount: r.claim_amount != null ? Number(r.claim_amount) : null,
     transferVerified: r.transfer_verified, status: r.status, driveFileName: r.drive_file_name, driveFolder: r.drive_folder,
     driveFolderUrl: r.drive_folder_url, date: r.claim_date, slipApproved: r.slip_approved, paymentMethods: r.payment_methods || [],
+    slipRejectReason: r.slip_reject_reason,
   };
 }
 function claimAppToRow(c) {
@@ -715,6 +721,7 @@ function claimAppToRow(c) {
     slip_url: c.slipUrl || null, slip_type: c.slipType || null, slip_amount: c.slipAmount, item_amount: c.itemAmount, claim_amount: c.claimAmount,
     transfer_verified: !!c.transferVerified, status: c.status, drive_file_name: c.driveFileName || null, drive_folder: c.driveFolder || null,
     drive_folder_url: c.driveFolderUrl || null, claim_date: c.date || null, slip_approved: !!c.slipApproved, payment_methods: c.paymentMethods || [],
+    slip_reject_reason: c.slipRejectReason || null,
   };
 }
 
@@ -1267,7 +1274,12 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
   const [resolvingIssueFor, setResolvingIssueFor] = useState(null);
   const filtered = filterOrdersBySearch(orders, query, statusFilter, claims, dateFilter);
   const pinIssues = !!(currentUser && currentUser.role === 'salesman');
-  const isPinned = o => o.hasIssue && !o.issueApproved;
+  const latestClaimFor = (orderId) => {
+    const list = (claims || []).filter(c => c.orderId === orderId);
+    if (list.length === 0) return null;
+    return [...list].sort((a, b) => (a.id < b.id ? 1 : -1))[0];
+  };
+  const isPinned = o => (o.hasIssue && !o.issueApproved) || latestClaimFor(o.id)?.status === 'rejected';
   const sorted = pinIssues ? [...filtered].sort((a, b) => (isPinned(b) ? 1 : 0) - (isPinned(a) ? 1 : 0)) : filtered;
 
   const resolveIssue = async (order, file) => {
@@ -1358,6 +1370,7 @@ function OrderTable({ orders, claims, showAgent = true, actions, searchable = tr
                       onResolveIssue={file => resolveIssue(o, file)}
                       resolvingIssue={resolvingIssueFor === o.id}
                       showBreakdown={!!(currentUser && currentUser.role === 'finance')}
+                      rejectedClaim={latestClaimFor(o.id)?.status === 'rejected' ? latestClaimFor(o.id) : null}
                     />
                   </td>
                 </tr>
@@ -1527,8 +1540,10 @@ function SlipPreview({ url, type, label, width = 180, height = 200 }) {
   );
 }
 
-function MultiSlipReview({ claim, onApprove, canApprove }) {
+function MultiSlipReview({ claim, onApprove, onReject, canApprove }) {
   const { t } = useLang();
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
   const methods = claim.paymentMethods && claim.paymentMethods.length > 0
     ? claim.paymentMethods
     : [{ method: claim.method, slipFile: claim.slipFile, slipUrl: claim.slipUrl, slipType: claim.slipType, amount: claim.slipAmount }];
@@ -1546,8 +1561,26 @@ function MultiSlipReview({ claim, onApprove, canApprove }) {
           {m.slipUrl && <a href={m.slipUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'inline-block', marginTop: 6 }}><Btn size="sm" variant="outline" icon={FileText}>{t('downloadSlip')}</Btn></a>}
         </div>
       ))}
-      {canApprove && !claim.slipApproved && (
-        <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={onApprove}>{t('approveSlip')}</Btn>
+      {claim.status === 'rejected' && claim.slipRejectReason && (
+        <div style={{ background: C.brickTint, border: `1px solid ${C.brick}`, borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: C.brick, marginBottom: 2 }}>{t('slipRejectedTag')}</div>
+          <div style={{ fontSize: 12, color: C.ink }}>{claim.slipRejectReason}</div>
+        </div>
+      )}
+      {canApprove && !claim.slipApproved && claim.status !== 'rejected' && !rejecting && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={onApprove}>{t('approveSlip')}</Btn>
+          <Btn size="sm" variant="brick" icon={XCircle} onClick={() => setRejecting(true)}>{t('rejectSlip')}</Btn>
+        </div>
+      )}
+      {canApprove && rejecting && (
+        <div>
+          <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={reason} onChange={e => setReason(e.target.value)} placeholder={t('slipRejectReasonPlaceholder')} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <Btn size="sm" variant="brick" icon={XCircle} disabled={!reason.trim()} onClick={() => { onReject(reason); setRejecting(false); setReason(''); }}>{t('confirmReject')}</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => { setRejecting(false); setReason(''); }}>{t('cancel')}</Btn>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2212,7 +2245,7 @@ function ItemsReceipt({ items, showBreakdown }) {
   );
 }
 
-function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onSetIssueCheck, onApproveResolution, canResolveIssue, onResolveIssue, resolvingIssue, showBreakdown }) {
+function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDelivered, onSetIssueCheck, onApproveResolution, canResolveIssue, onResolveIssue, resolvingIssue, showBreakdown, rejectedClaim }) {
   const { t } = useLang();
   const [editingIssue, setEditingIssue] = useState(false);
   const [issueChecked, setIssueCheckedInput] = useState(!!order.hasIssue);
@@ -2234,6 +2267,14 @@ function AdminOrderDetail({ order, onApproveLogistic, onRejectLogistic, onMarkDe
   return (
     <div>
       <DeliveryProgress order={order} />
+      {rejectedClaim && (
+        <div style={{ background: C.brickTint, border: `1px solid ${C.brick}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: C.brick, marginBottom: 4 }}>
+            <AlertTriangle size={14} /> {t('commClaimRejectedTitle')}
+          </div>
+          <div style={{ fontSize: 12.5, color: C.ink }}>{rejectedClaim.slipRejectReason}</div>
+        </div>
+      )}
       {order.status === 'so_opened' && onMarkDelivered && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <Btn size="sm" variant="teal" icon={CheckCircle2} disabled={order.deliveryStage === 'delivered'} onClick={onMarkDelivered}>
@@ -2407,7 +2448,9 @@ function AdminDashboard({ orders, setOrders, items, setItems }) {
   const [orderDateFilter, setOrderDateFilter] = useState('');
   const matchesQuery = o => {
     if (orderDateFilter && (o.date || '').slice(0, 10) !== orderDateFilter) return false;
-    return !orderQuery.trim() || o.id.toLowerCase().includes(orderQuery.trim().toLowerCase());
+    if (!orderQuery.trim()) return true;
+    const q = orderQuery.trim().toLowerCase();
+    return o.id.toLowerCase().includes(q) || (o.soNumber || '').toLowerCase().includes(q);
   };
   const pendingFiltered = pending.filter(matchesQuery);
   const openedFiltered = opened.filter(matchesQuery);
@@ -2961,17 +3004,27 @@ function AccountDashboard({ orders, claims, setClaims, setOrders }) {
     }
   };
 
-  const filtered = filter === 'all' ? claims : filter === 'approved' ? claims.filter(c => c.slipApproved) : claims.filter(c => !c.slipApproved);
+  const rejectSlip = async (claim, reason) => {
+    if (!reason || !reason.trim()) return;
+    setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, status: 'rejected', slipRejectReason: reason.trim() } : c));
+    const { error } = await supabase.from('claims').update({ status: 'rejected', slip_reject_reason: reason.trim() }).eq('id', claim.id);
+    if (error) { console.error('reject slip failed:', error.message); alert(error.message); }
+  };
+
+  const filtered = filter === 'all' ? claims
+    : filter === 'approved' ? claims.filter(c => c.slipApproved)
+    : filter === 'rejected' ? claims.filter(c => c.status === 'rejected')
+    : claims.filter(c => !c.slipApproved && c.status !== 'rejected');
 
   return (
     <div>
       <SectionTitle eyebrow="Account" title={t('accountDashboardTitle')} />
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        {['all', 'pending', 'approved'].map(f => (
+        {['all', 'pending', 'approved', 'rejected'].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
             fontSize: 12, padding: '6px 12px', borderRadius: 20, border: `1px solid ${filter === f ? C.wood : C.line}`,
             background: filter === f ? C.woodTint : '#fff', color: filter === f ? C.wood : C.sub, cursor: 'pointer', fontFamily: fontBody, fontWeight: 600,
-          }}>{{ all: t('filterAll'), pending: t('slipPendingTag'), approved: t('slipApprovedTag') }[f]}</button>
+          }}>{{ all: t('filterAll'), pending: t('slipPendingTag'), approved: t('slipApprovedTag'), rejected: t('slipRejectedTag') }[f]}</button>
         ))}
       </div>
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'auto', maxHeight: filtered.length > 10 ? 520 : undefined }}>
@@ -2991,7 +3044,7 @@ function AccountDashboard({ orders, claims, setClaims, setOrders }) {
                     <td style={{ ...td, fontFamily: fontMono }}>{c.id}</td>
                     <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{c.orderId}{order?.soNumber && <div style={{ color: C.teal, fontSize: 10.5, marginTop: 2 }}>{order.soNumber}</div>}</td>
                     <td style={td}>{c.agent}</td>
-                    <td style={td}><StampBadge status={c.slipApproved ? 'verified' : 'pending'} /></td>
+                    <td style={td}><StampBadge status={c.status === 'rejected' ? 'rejected' : c.slipApproved ? 'verified' : 'pending'} /></td>
                     <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(c.slipAmount)}</td>
                     <td style={td}><Btn size="sm" variant="outline" icon={Eye} onClick={() => setExpandedId(isOpen ? null : c.id)}>{isOpen ? t('collapse') : t('detail')}</Btn></td>
                   </tr>
@@ -3001,7 +3054,7 @@ function AccountDashboard({ orders, claims, setClaims, setOrders }) {
                         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 16 }}>
                           <div style={{ flex: '1 1 200px' }}>
                             <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.08em', color: C.wood, textTransform: 'uppercase', marginBottom: 8 }}>{t('colBankSlip')}</div>
-                            <MultiSlipReview claim={c} canApprove onApprove={() => approveSlip(c)} />
+                            <MultiSlipReview claim={c} canApprove onApprove={() => approveSlip(c)} onReject={reason => rejectSlip(c, reason)} />
                           </div>
                           <div style={{ flex: '2 1 320px' }}>
                             {order ? <AdminOrderDetail order={order} /> : <div style={{ fontSize: 12.5, color: C.sub }}>{t('orderNotFound')}</div>}
