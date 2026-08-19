@@ -2989,7 +2989,7 @@ function AccountDashboard({ orders, claims, setClaims, setOrders }) {
                 <React.Fragment key={c.id}>
                   <tr style={{ borderTop: `1px solid ${C.line}` }}>
                     <td style={{ ...td, fontFamily: fontMono }}>{c.id}</td>
-                    <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{c.orderId}</td>
+                    <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{c.orderId}{order?.soNumber && <div style={{ color: C.teal, fontSize: 10.5, marginTop: 2 }}>{order.soNumber}</div>}</td>
                     <td style={td}>{c.agent}</td>
                     <td style={td}><StampBadge status={c.slipApproved ? 'verified' : 'pending'} /></td>
                     <td style={{ ...td, fontFamily: fontMono, fontWeight: 600 }}>{RM(c.slipAmount)}</td>
@@ -3096,7 +3096,7 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
                     <React.Fragment key={c.id}>
                       <tr style={{ borderTop: `1px solid ${C.line}` }}>
                         <td style={{ ...td, fontFamily: fontMono }}>{c.id}</td>
-                        <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{c.orderId}</td>
+                        <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{c.orderId}{order?.soNumber && <div style={{ color: C.teal, fontSize: 10.5, marginTop: 2 }}>{order.soNumber}</div>}</td>
                         <td style={td}>{c.agent}</td>
                         <td style={{ ...td, fontSize: 12 }}>
                           {(c.paymentMethods && c.paymentMethods.length > 0 ? c.paymentMethods.map(m => m.method) : [c.method])
