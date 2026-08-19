@@ -269,6 +269,9 @@ const STRINGS = {
   billPaymentExplainOrderForm: { zh: 'Total Bill 是依商品目录价格自动算出，不能更改；Total Payment 是这笔订单实际预计收到的金额，可以逐项调整（比如有议价）', en: 'Total Bill is calculated from the product catalog and cannot be changed; Total Payment is the amount actually expected to be received for this order, adjustable per item (e.g. for negotiated pricing)' },
   lineAdjustableNote: { zh: '可调整', en: 'adjustable' },
   slipAmountPlaceholder: { zh: '请输入水单上显示的实际金额', en: 'Enter the actual amount shown on the slip' },
+  multiMethodHint: { zh: '客户用多种方式付款的话，可以多选', en: 'Select more than one if the customer paid using multiple methods' },
+  noMethodSelected: { zh: '请先回上一步选择付款方式', en: 'Go back and select a payment method first' },
+  colBankSlipMethod: { zh: '付款方式 / 水单', en: 'Method / Slip' },
   itemIdCol: { zh: '商品编号', en: 'Item ID' },
   itemNameCol: { zh: '商品名称', en: 'Item Name' },
   qtyColShort: { zh: '数量', en: 'Qty' },
@@ -703,7 +706,7 @@ function claimRowToApp(r) {
     slipUrl: r.slip_url, slipType: r.slip_type, slipAmount: r.slip_amount != null ? Number(r.slip_amount) : null,
     itemAmount: r.item_amount != null ? Number(r.item_amount) : null, claimAmount: r.claim_amount != null ? Number(r.claim_amount) : null,
     transferVerified: r.transfer_verified, status: r.status, driveFileName: r.drive_file_name, driveFolder: r.drive_folder,
-    driveFolderUrl: r.drive_folder_url, date: r.claim_date, slipApproved: r.slip_approved,
+    driveFolderUrl: r.drive_folder_url, date: r.claim_date, slipApproved: r.slip_approved, paymentMethods: r.payment_methods || [],
   };
 }
 function claimAppToRow(c) {
@@ -711,7 +714,7 @@ function claimAppToRow(c) {
     id: c.id, order_id: c.orderId, agent: c.agent, team: c.team, method: c.method, slip_file: c.slipFile || null,
     slip_url: c.slipUrl || null, slip_type: c.slipType || null, slip_amount: c.slipAmount, item_amount: c.itemAmount, claim_amount: c.claimAmount,
     transfer_verified: !!c.transferVerified, status: c.status, drive_file_name: c.driveFileName || null, drive_folder: c.driveFolder || null,
-    drive_folder_url: c.driveFolderUrl || null, claim_date: c.date || null, slip_approved: !!c.slipApproved,
+    drive_folder_url: c.driveFolderUrl || null, claim_date: c.date || null, slip_approved: !!c.slipApproved, payment_methods: c.paymentMethods || [],
   };
 }
 
@@ -1524,6 +1527,32 @@ function SlipPreview({ url, type, label, width = 180, height = 200 }) {
   );
 }
 
+function MultiSlipReview({ claim, onApprove, canApprove }) {
+  const { t } = useLang();
+  const methods = claim.paymentMethods && claim.paymentMethods.length > 0
+    ? claim.paymentMethods
+    : [{ method: claim.method, slipFile: claim.slipFile, slipUrl: claim.slipUrl, slipType: claim.slipType, amount: claim.slipAmount }];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {methods.map((m, i) => (
+        <div key={i}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.wood, marginBottom: 6 }}>
+            {t(PAYMENT_METHODS.find(pm => pm.code === m.method)?.key || 'colBankSlipMethod')}
+          </div>
+          <SlipPreview url={m.slipUrl} type={m.slipType} label={t('bankSlipWord')} width={200} height={240} />
+          <div style={{ fontSize: 11.5, color: C.sub, marginTop: 6 }}>{m.slipFile}</div>
+          <div style={{ fontFamily: fontMono, fontSize: 13, fontWeight: 700, color: C.wood, marginTop: 4 }}>{RM(m.amount)}</div>
+          {m.slipUrl && <a href={m.slipUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'inline-block', marginTop: 6 }}><Btn size="sm" variant="outline" icon={FileText}>{t('downloadSlip')}</Btn></a>}
+        </div>
+      ))}
+      {canApprove && !claim.slipApproved && (
+        <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={onApprove}>{t('approveSlip')}</Btn>
+      )}
+    </div>
+  );
+}
+
 function ItemThumb({ item, size = 34 }) {
   return item.image ? (
     <img src={item.image} alt="" style={{ width: size, height: size, borderRadius: 6, objectFit: 'cover', border: `1px solid ${C.line}`, flexShrink: 0 }} />
@@ -1904,37 +1933,61 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
   const { t } = useLang();
   const [step, setStep] = useState(1);
   const [orderId, setOrderId] = useState('');
-  const [method, setMethod] = useState('bank');
-  const [slipFile, setSlipFile] = useState(null);
-  const [slipExt, setSlipExt] = useState('jpg');
-  const [uploadingSlip, setUploadingSlip] = useState(false);
-  const [slipUrl, setSlipUrl] = useState(null);
-  const [slipType, setSlipType] = useState('');
-  const [slipAmount, setSlipAmount] = useState('');
-  const [transferOk, setTransferOk] = useState(null);
+  const [selectedMethods, setSelectedMethods] = useState([]);
+  const [methodData, setMethodData] = useState({}); // { bank: {file, ext, url, type, amount, uploading}, ... }
   const eligible = orders.filter(o => o.agent === user.name && o.status === 'so_opened');
   const order = eligible.find(o => o.id === orderId);
-  const claimAmount = order && slipAmount !== '' ? Number(slipAmount) - order.total : null;
-  const driveFileName = order ? `${order.soNumber}.${slipExt}` : '';
+  const totalPayment = selectedMethods.reduce((s, m) => s + (Number(methodData[m]?.amount) || 0), 0);
+
+  const toggleMethod = (code) => {
+    setSelectedMethods(prev => prev.includes(code) ? prev.filter(m => m !== code) : [...prev, code]);
+  };
+  const updateMethodData = (code, patch) => setMethodData(prev => ({ ...prev, [code]: { ...(prev[code] || {}), ...patch } }));
+
+  const uploadForMethod = async (code, file) => {
+    if (!file) return;
+    const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'jpg';
+    updateMethodData(code, { uploading: true });
+    try {
+      const url = await uploadToDrive(file, 'bank_slip');
+      updateMethodData(code, { file: file.name, ext, url, type: file.type, uploading: false });
+    } catch (err) {
+      alert(err.message);
+      updateMethodData(code, { uploading: false });
+    }
+  };
+
+  const allUploaded = selectedMethods.length > 0 && selectedMethods.every(m => methodData[m]?.url);
+  const anyUploading = selectedMethods.some(m => methodData[m]?.uploading);
+  const allAmountsFilled = selectedMethods.length > 0 && selectedMethods.every(m => Number(methodData[m]?.amount) > 0);
 
   const submitClaim = () => {
     if (!order) return;
+    const paymentMethodsPayload = selectedMethods.map(code => ({
+      method: code,
+      slipFile: methodData[code]?.file || '',
+      slipUrl: methodData[code]?.url || '',
+      slipType: methodData[code]?.type || '',
+      amount: Number(methodData[code]?.amount) || 0,
+    }));
+    const firstMethod = paymentMethodsPayload[0];
     onSubmit({
       id: genTimeId('CM'),
       orderId: order.id,
       agent: user.name,
       team: user.team,
-      method,
-      slipFile,
-      slipUrl,
-      slipType,
-      driveFileName,
+      method: selectedMethods.join(','),
+      paymentMethods: paymentMethodsPayload,
+      slipFile: firstMethod?.slipFile || '',
+      slipUrl: firstMethod?.slipUrl || '',
+      slipType: firstMethod?.slipType || '',
+      driveFileName: order.soNumber ? `${order.soNumber}.${methodData[selectedMethods[0]]?.ext || 'jpg'}` : '',
       driveFolder: driveFolderName(),
       driveFolderUrl: GOOGLE_DRIVE_FOLDER_URL,
-      slipAmount: Number(slipAmount) || 0,
+      slipAmount: totalPayment,
       itemAmount: order.total,
-      claimAmount: claimAmount || 0,
-      transferVerified: !!transferOk,
+      claimAmount: totalPayment - order.total,
+      transferVerified: true,
       status: 'pending',
       date: new Date().toISOString().slice(0, 10),
     });
@@ -1980,9 +2033,10 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
         {step === 2 && (
           <div>
             <Field label={t('paymentMethodLabel')}>
+              <div style={{ fontSize: 11.5, color: C.sub, marginBottom: 6 }}>{t('multiMethodHint')}</div>
               {PAYMENT_METHODS.map(m => (
                 <label key={m.code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 4px', fontSize: 13.5, cursor: 'pointer' }}>
-                  <input type="radio" name="method" checked={method === m.code} onChange={() => setMethod(m.code)} /> {t(m.key)}
+                  <input type="checkbox" checked={selectedMethods.includes(m.code)} onChange={() => toggleMethod(m.code)} /> {t(m.key)}
                 </label>
               ))}
             </Field>
@@ -1990,27 +2044,20 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
         )}
         {step === 3 && (
           <div>
-            <Field label={t('uploadSlipLabel')}>
-              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.line}`, borderRadius: 8, padding: '26px 14px', cursor: uploadingSlip ? 'default' : 'pointer', color: C.sub }}>
-                {uploadingSlip ? <Loader2 size={22} color={C.wood} style={{ animation: 'spin 1s linear infinite' }} /> : <UploadCloud size={22} color={C.wood} />}
-                <span style={{ fontSize: 12.5 }}>{uploadingSlip ? '…' : (slipFile ? slipFile : t('clickToChooseFile'))}</span>
-                <input type="file" disabled={uploadingSlip} style={{ display: 'none' }} onChange={async e => {
-                  const f = e.target.files[0];
-                  if (!f) return;
-                  const ext = f.name.includes('.') ? f.name.split('.').pop().toLowerCase() : 'jpg';
-                  setUploadingSlip(true);
-                  try {
-                    const url = await uploadToDrive(f, 'bank_slip');
-                    setSlipFile(f.name); setSlipExt(ext);
-                    setSlipUrl(url); setSlipType(f.type);
-                    setTransferOk(true); setSlipAmount('');
-                  } catch (err) {
-                    alert(err.message);
-                  }
-                  setUploadingSlip(false);
-                }} />
-              </label>
-            </Field>
+            {selectedMethods.length === 0 && <div style={{ color: C.sub, fontSize: 13 }}>{t('noMethodSelected')}</div>}
+            {selectedMethods.map(code => {
+              const md = methodData[code] || {};
+              const methodLabel = t(PAYMENT_METHODS.find(m => m.code === code)?.key || code);
+              return (
+                <Field key={code} label={`${t('uploadSlipLabel')} — ${methodLabel}`}>
+                  <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, border: `1.5px dashed ${C.line}`, borderRadius: 8, padding: '20px 14px', cursor: md.uploading ? 'default' : 'pointer', color: C.sub }}>
+                    {md.uploading ? <Loader2 size={20} color={C.wood} style={{ animation: 'spin 1s linear infinite' }} /> : <UploadCloud size={20} color={C.wood} />}
+                    <span style={{ fontSize: 12.5 }}>{md.uploading ? '…' : (md.file ? md.file : t('clickToChooseFile'))}</span>
+                    <input type="file" disabled={md.uploading} style={{ display: 'none' }} onChange={e => uploadForMethod(code, e.target.files[0])} />
+                  </label>
+                </Field>
+              );
+            })}
           </div>
         )}
         {step === 4 && order && (
@@ -2019,11 +2066,16 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
             <div style={{ background: C.woodTint, border: `1px solid ${C.line}`, borderRadius: 8, padding: '9px 12px', fontSize: 11.5, color: C.wood, marginBottom: 12, lineHeight: 1.5 }}>
               {t('billPaymentExplainSalesman')}
             </div>
-            <Field label={t('paymentAmountLabel')}>
-              <input type="number" style={inputStyle} value={slipAmount} onChange={e => setSlipAmount(e.target.value)} placeholder={t('slipAmountPlaceholder')} />
-            </Field>
+            {selectedMethods.map(code => {
+              const methodLabel = t(PAYMENT_METHODS.find(m => m.code === code)?.key || code);
+              return (
+                <Field key={code} label={`${t('paymentAmountLabel')} — ${methodLabel}`}>
+                  <input type="number" style={inputStyle} value={methodData[code]?.amount || ''} onChange={e => updateMethodData(code, { amount: e.target.value })} placeholder={t('slipAmountPlaceholder')} />
+                </Field>
+              );
+            })}
             <div style={{ background: C.woodTint, borderRadius: 8, padding: '12px 14px', fontFamily: fontMono, fontSize: 13 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{t('paymentAmountRow')}</span><span>{RM(slipAmount || 0)}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{t('paymentAmountRow')}</span><span>{RM(totalPayment)}</span></div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}><span>{t('orderTotalRow')}</span><span>{RM(order.total)}</span></div>
             </div>
             <div style={{ fontSize: 11.5, color: C.sub, marginTop: 10 }}>{t('commissionHiddenNote')}</div>
@@ -2033,8 +2085,8 @@ function ClaimWizard({ user, orders, setView, onSubmit }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
         <Btn variant="outline" icon={ChevronLeft} onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1}>{t('prev')}</Btn>
-        {step < 4 && <Btn icon={ChevronRight} onClick={() => setStep(s => s + 1)} disabled={(step === 1 && !orderId) || (step === 3 && (!slipFile || uploadingSlip))}>{t('next')}</Btn>}
-        {step === 4 && <Btn icon={CheckCircle2} disabled={!slipAmount || Number(slipAmount) <= 0} onClick={submitClaim}>{t('submitToFinance')}</Btn>}
+        {step < 4 && <Btn icon={ChevronRight} onClick={() => setStep(s => s + 1)} disabled={(step === 1 && !orderId) || (step === 2 && selectedMethods.length === 0) || (step === 3 && (!allUploaded || anyUploading))}>{t('next')}</Btn>}
+        {step === 4 && <Btn icon={CheckCircle2} disabled={!allAmountsFilled} onClick={submitClaim}>{t('submitToFinance')}</Btn>}
       </div>
     </div>
   );
@@ -2948,13 +3000,7 @@ function AccountDashboard({ orders, claims, setClaims, setOrders }) {
                         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 16 }}>
                           <div style={{ flex: '1 1 200px' }}>
                             <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.08em', color: C.wood, textTransform: 'uppercase', marginBottom: 8 }}>{t('colBankSlip')}</div>
-                            <SlipPreview url={c.slipUrl} type={c.slipType} label={t('bankSlipWord')} width={200} height={240} />
-                            <div style={{ fontSize: 11.5, color: C.sub, marginTop: 6 }}>{c.slipFile}</div>
-                            <div style={{ fontFamily: fontMono, fontSize: 13, fontWeight: 700, color: C.wood, marginTop: 4 }}>{RM(c.slipAmount)}</div>
-                            <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                              {c.slipUrl && <a href={c.slipUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}><Btn size="sm" variant="outline" icon={FileText}>{t('downloadSlip')}</Btn></a>}
-                              {!c.slipApproved && <Btn size="sm" variant="teal" icon={CheckCircle2} onClick={() => approveSlip(c)}>{t('approveSlip')}</Btn>}
-                            </div>
+                            <MultiSlipReview claim={c} canApprove onApprove={() => approveSlip(c)} />
                           </div>
                           <div style={{ flex: '2 1 320px' }}>
                             {order ? <AdminOrderDetail order={order} /> : <div style={{ fontSize: 12.5, color: C.sub }}>{t('orderNotFound')}</div>}
@@ -3051,7 +3097,10 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
                         <td style={{ ...td, fontFamily: fontMono }}>{c.id}</td>
                         <td style={{ ...td, fontFamily: fontMono, fontSize: 12 }}>{c.orderId}</td>
                         <td style={td}>{c.agent}</td>
-                        <td style={{ ...td, fontSize: 12 }}>{t((PAYMENT_METHODS.find(m => m.code === c.method) || {}).key) || c.method}</td>
+                        <td style={{ ...td, fontSize: 12 }}>
+                          {(c.paymentMethods && c.paymentMethods.length > 0 ? c.paymentMethods.map(m => m.method) : [c.method])
+                            .map(code => t((PAYMENT_METHODS.find(m => m.code === code) || {}).key) || code).join(' + ')}
+                        </td>
                         <td style={td}>{c.transferVerified ? <span style={{ color: C.teal, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}><ShieldCheck size={13} /> {t('payeeConfirmed')}</span> : <span style={{ color: C.brick, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}><AlertTriangle size={13} /> {t('payeeMismatch')}</span>}</td>
                         <td style={td}>
                           {c.driveFileName ? (
@@ -3085,9 +3134,7 @@ function FinanceDashboard({ orders, claims, setClaims, items, setItems, accounts
                             <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                               <div style={{ flex: '1 1 200px' }}>
                                 <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.08em', color: C.wood, textTransform: 'uppercase', marginBottom: 8 }}>{t('bankSlipTitle')}</div>
-                                <SlipPreview url={c.slipUrl} type={c.slipType} label={t('bankSlipWord')} width={180} height={220} />
-                                <div style={{ fontSize: 11.5, color: C.sub, marginTop: 6 }}>{c.slipFile}</div>
-                                <div style={{ fontSize: 12, color: C.ink, marginTop: 4, fontFamily: fontMono }}>{RM(c.slipAmount)}</div>
+                                <MultiSlipReview claim={c} canApprove={false} />
                               </div>
 
                               {order && (order.depositSlipUrl || order.depositAmount != null) && (
