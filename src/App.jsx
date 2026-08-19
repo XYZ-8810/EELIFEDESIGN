@@ -1721,7 +1721,7 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
   const [poscode, setPoscode] = useState(editOrder?.poscode || '');
   const [phone1, setPhone1] = useState(editOrder?.phone1 || '');
   const [phone2, setPhone2] = useState(editOrder?.phone2 || '');
-  const [salesExecutive, setSalesExecutive] = useState(editOrder?.salesExecutive || user.name);
+  const [salesExecutive] = useState(user.name);
   const [salesmanPhone, setSalesmanPhone] = useState(editOrder?.salesmanPhone || '');
   const [lines, setLines] = useState(() =>
     editOrder ? editOrder.items.map((it, i) => ({ id: Date.now() + i, itemCode: it.code, qty: it.qty, addOnCodes: (it.addOns || []).map(a => a.code), paymentAmount: it.paymentAmount ?? null })) : [{ id: 1, itemCode: '', qty: 1, addOnCodes: [], paymentAmount: null }]
@@ -1847,9 +1847,7 @@ function OrderForm({ user, items, accounts, editOrder, onCancel, onSubmit }) {
         <div style={{ fontFamily: fontMono, fontSize: 11, letterSpacing: '0.1em', color: C.wood, textTransform: 'uppercase', marginBottom: 12 }}>{t('salesInfo')}</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
           <Field label="Sales Executive">
-            <select style={inputStyle} value={salesExecutive} onChange={e => setSalesExecutive(e.target.value)}>
-              {accounts.filter(a => a.role === 'salesman' && a.team === user.team).map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-            </select>
+            <input style={{ ...inputStyle, background: C.woodTint, color: C.sub, cursor: 'not-allowed' }} value={salesExecutive} disabled />
           </Field>
           <Field label="Salesman Phone Number"><input style={inputStyle} value={salesmanPhone} onChange={e => setSalesmanPhone(e.target.value)} placeholder="012-3456789" /></Field>
         </div>
