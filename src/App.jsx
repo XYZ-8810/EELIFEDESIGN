@@ -1450,7 +1450,7 @@ function SalesmanDashboard({ user, orders, items, claims, setOrders, setClaims, 
       }}
     />
   );
-  if (subView === 'claim') return <ClaimWizard user={user} orders={orders} setView={setSubView} onSubmit={async claim => {
+  if (subView === 'claim') return <ClaimWizard user={user} orders={orders} claims={claims} setView={setSubView} onSubmit={async claim => {
     setClaims(prev => [claim, ...prev]);
     const { error } = await supabase.from('claims').insert(claimAppToRow(claim));
     if (error) { console.error('insert claim failed:', error.message); alert(error.message); }
@@ -1929,13 +1929,14 @@ function driveFolderName(date = new Date()) {
   return `EE LIFE BANK SLIP (${month} ${date.getFullYear()})`;
 }
 
-function ClaimWizard({ user, orders, setView, onSubmit }) {
+function ClaimWizard({ user, orders, claims, setView, onSubmit }) {
   const { t } = useLang();
   const [step, setStep] = useState(1);
   const [orderId, setOrderId] = useState('');
   const [selectedMethods, setSelectedMethods] = useState([]);
   const [methodData, setMethodData] = useState({}); // { bank: {file, ext, url, type, amount, uploading}, ... }
-  const eligible = orders.filter(o => o.agent === user.name && o.status === 'so_opened');
+  const claimedOrderIds = new Set((claims || []).filter(c => c.status !== 'rejected').map(c => c.orderId));
+  const eligible = orders.filter(o => o.agent === user.name && o.status === 'so_opened' && !claimedOrderIds.has(o.id));
   const order = eligible.find(o => o.id === orderId);
   const totalPayment = selectedMethods.reduce((s, m) => s + (Number(methodData[m]?.amount) || 0), 0);
 
